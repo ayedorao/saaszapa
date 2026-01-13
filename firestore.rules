@@ -1,0 +1,177 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/user_roles/$(request.auth.uid + '_' + role));
+    }
+
+    function hasAnyRole() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/user_roles/$(request.auth.uid));
+    }
+
+    match /profiles/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isOwner(userId) || hasRole('admin');
+      allow delete: if false;
+
+      function hasActiveProfile() {
+        return exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
+               get(/databases/$(database)/documents/profiles/$(request.auth.uid)).data.active == true;
+      }
+    }
+
+    match /roles/{roleId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    match /user_roles/{userRoleId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /products/{productId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated();
+    }
+
+    match /product_variants/{variantId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && validateVariantCreate();
+      allow update: if isAuthenticated() && validateVariantUpdate();
+      allow delete: if isAuthenticated();
+
+      function validateVariantCreate() {
+        return request.resource.data.barcode is string &&
+               request.resource.data.barcode.size() >= 10 &&
+               request.resource.data.sku is string &&
+               request.resource.data.product_id is string &&
+               request.resource.data.size_id is string &&
+               request.resource.data.color_id is string;
+      }
+
+      function validateVariantUpdate() {
+        return !('barcode' in request.resource.data) ||
+               request.resource.data.barcode == resource.data.barcode;
+      }
+    }
+
+    match /inventory/{inventoryId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /inventory_movements/{movementId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /sizes/{sizeId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /colors/{colorId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /cash_registers/{registerId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /cash_sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /customers/{customerId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /sales/{saleId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /sale_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /returns/{returnId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /return_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /exchanges/{exchangeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /exchange_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /promotions/{promotionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /promotion_products/{promoProductId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAuthenticated();
+    }
+
+    match /stores/{storeId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if false;
+    }
+
+    match /audit_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+  }
+}
