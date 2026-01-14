@@ -249,6 +249,7 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
         <ProductTour
           onComplete={handleCompleteTutorial}
           onClose={handleCloseTutorial}
+          isAdmin={isAdmin}
         />
       )}
     </div>

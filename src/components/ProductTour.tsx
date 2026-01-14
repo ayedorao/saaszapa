@@ -12,6 +12,7 @@ interface TourStep {
 interface ProductTourProps {
   onComplete: () => void;
   onClose: () => void;
+  isAdmin?: boolean;
 }
 
 const tourSteps: TourStep[] = [
@@ -79,6 +80,41 @@ const tourSteps: TourStep[] = [
     navigateTo: 'chat'
   },
   {
+    target: '[data-tour="system-control"]',
+    title: 'Control de Sistema',
+    description: 'Gestiona anuncios y alertas del sistema. Crea notificaciones para informar a todas las tiendas sobre actualizaciones, incidentes o eventos importantes.',
+    placement: 'right',
+    navigateTo: 'system-control'
+  },
+  {
+    target: '[data-tour="users"]',
+    title: 'Gestión de Usuarios',
+    description: 'Administra los usuarios del sistema. Asigna roles y permisos, activa o desactiva cuentas, y supervisa la actividad de los usuarios en todas las tiendas.',
+    placement: 'right',
+    navigateTo: 'users'
+  },
+  {
+    target: '[data-tour="stores"]',
+    title: 'Gestión de Tiendas',
+    description: 'Administra todas las tiendas de la red. Registra nuevas sucursales, actualiza información de contacto y controla el estado de cada ubicación.',
+    placement: 'right',
+    navigateTo: 'stores'
+  },
+  {
+    target: '[data-tour="registers"]',
+    title: 'Administración de Cajas',
+    description: 'Supervisa todas las cajas registradoras del sistema. Configura nuevas cajas, asígnalas a tiendas específicas y controla su estado operativo.',
+    placement: 'right',
+    navigateTo: 'registers'
+  },
+  {
+    target: '[data-tour="chat-audit"]',
+    title: 'Auditoría de Chat',
+    description: 'Revisa el historial completo de conversaciones entre tiendas. Monitorea la comunicación y asegura el cumplimiento de políticas de uso.',
+    placement: 'right',
+    navigateTo: 'chat-audit'
+  },
+  {
     target: '[data-tour="profile"]',
     title: 'Tu Perfil',
     description: 'Accede a tu perfil personal. Actualiza tu información, foto y preferencias. También puedes reiniciar este tutorial cuando lo necesites.',
@@ -86,14 +122,19 @@ const tourSteps: TourStep[] = [
   }
 ];
 
-export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
+export default function ProductTour({ onComplete, onClose, isAdmin = false }: ProductTourProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [highlightPosition, setHighlightPosition] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 });
   const tooltipRef = useRef<HTMLDivElement>(null);
   const [isNavigating, setIsNavigating] = useState(false);
 
-  const step = tourSteps[currentStep];
+  const adminSteps = ['system-control', 'users', 'stores', 'registers', 'chat-audit'];
+  const filteredSteps = isAdmin
+    ? tourSteps
+    : tourSteps.filter(step => !adminSteps.some(adminStep => step.target.includes(adminStep)));
+
+  const step = filteredSteps[currentStep];
 
   useEffect(() => {
     if (step.navigateTo && !isNavigating) {
@@ -177,7 +218,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
   }
 
   function handleNext() {
-    if (currentStep < tourSteps.length - 1) {
+    if (currentStep < filteredSteps.length - 1) {
       setCurrentStep(currentStep + 1);
     } else {
       onComplete();
@@ -192,7 +233,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black bg-opacity-70 transition-opacity" />
+      <div className="absolute inset-0 bg-black bg-opacity-40 transition-opacity" />
 
       <div
         className="absolute pointer-events-none transition-all duration-300"
@@ -201,7 +242,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
           left: `${highlightPosition.left - 8}px`,
           width: `${highlightPosition.width + 16}px`,
           height: `${highlightPosition.height + 16}px`,
-          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.7), 0 0 20px rgba(255, 255, 255, 0.5)',
+          boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.45), 0 0 20px rgba(255, 255, 255, 0.5)',
           borderRadius: '8px',
           border: '3px solid white',
         }}
@@ -220,7 +261,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
             <div>
               <h3 className="text-xl font-bold text-slate-900">{step.title}</h3>
               <p className="text-sm text-slate-600 mt-1">
-                Paso {currentStep + 1} de {tourSteps.length}
+                Paso {currentStep + 1} de {filteredSteps.length}
               </p>
             </div>
             <button
@@ -234,7 +275,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
 
           <div className="mb-4">
             <div className="flex space-x-1">
-              {tourSteps.map((_, index) => (
+              {filteredSteps.map((_, index) => (
                 <div
                   key={index}
                   className={`h-1.5 flex-1 rounded-full transition-colors ${
@@ -270,7 +311,7 @@ export default function ProductTour({ onComplete, onClose }: ProductTourProps) {
               onClick={handleNext}
               className="px-6 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-colors flex items-center space-x-2"
             >
-              <span>{currentStep === tourSteps.length - 1 ? 'Finalizar' : 'Siguiente'}</span>
+              <span>{currentStep === filteredSteps.length - 1 ? 'Finalizar' : 'Siguiente'}</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
