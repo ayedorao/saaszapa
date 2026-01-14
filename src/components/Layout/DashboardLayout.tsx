@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUserRole } from '../../hooks/useUserRole';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import Tutorial from '../Tutorial';
+import ProductTour from '../ProductTour';
 import AnnouncementBanner from '../AnnouncementBanner';
 import {
   ShoppingCart,
@@ -148,6 +148,7 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
               return (
                 <button
                   key={item.id}
+                  data-tour={item.id}
                   onClick={() => {
                     window.dispatchEvent(new CustomEvent('navigate', { detail: item.id }));
                     setSidebarOpen(false);
@@ -169,6 +170,7 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
 
           <div className="p-4 border-t border-slate-800 space-y-2">
             <button
+              data-tour="profile"
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('navigate', { detail: 'profile' }));
                 setSidebarOpen(false);
@@ -244,7 +246,7 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
       )}
 
       {showTutorial && (
-        <Tutorial
+        <ProductTour
           onComplete={handleCompleteTutorial}
           onClose={handleCloseTutorial}
         />
