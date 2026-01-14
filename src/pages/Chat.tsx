@@ -59,11 +59,21 @@ export default function Chat() {
       const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
       setStores(storesData);
 
-      const usersSnapshot = await getDocs(query(collection(db, 'user_roles'), where('user_id', '==', user?.uid)));
-      if (usersSnapshot.empty) {
-        setCurrentStore(storesData[0] || null);
+      // Find the user's store by matching email
+      const userStore = storesData.find(store =>
+        store.email?.toLowerCase() === user?.email?.toLowerCase()
+      );
+
+      if (userStore) {
+        setCurrentStore(userStore);
       } else {
-        setCurrentStore(storesData[0] || null);
+        // Fallback: if no store matches user email, try to find by user_roles or use first store
+        const usersSnapshot = await getDocs(query(collection(db, 'user_roles'), where('user_id', '==', user?.uid)));
+        if (!usersSnapshot.empty && storesData.length > 0) {
+          setCurrentStore(storesData[0]);
+        } else if (storesData.length > 0) {
+          setCurrentStore(storesData[0]);
+        }
       }
     } catch (error) {
       console.error('Error loading stores:', error);
@@ -439,7 +449,7 @@ export default function Chat() {
 
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {stores
-                .filter(store => store.storeId !== currentStore?.storeId)
+                .filter(store => store.storeId !== currentStore?.storeId && store.active)
                 .map(store => (
                   <button
                     key={store.id}
@@ -450,6 +460,11 @@ export default function Chat() {
                     <p className="text-sm text-slate-600">{store.address || 'Sin dirección'}</p>
                   </button>
                 ))}
+              {stores.filter(store => store.storeId !== currentStore?.storeId && store.active).length === 0 && (
+                <div className="text-center py-8 text-slate-500">
+                  <p>No hay otras tiendas disponibles para chatear</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
