@@ -344,17 +344,17 @@ export default function Products() {
 
       const existingVariants = variantsByProduct.get(selectedProduct.id) || [];
 
-      const inventoryQuery = query(
-        collection(db, 'inventory'),
-        where('store_id', '==', selectedStoreId)
-      );
-      const inventorySnap = await getDocs(inventoryQuery);
-      const existingInventoryByVariant = new Map<string, { id: string; quantity: number }>();
-      inventorySnap.docs.forEach(doc => {
+      const allInventorySnap = await getDocs(collection(db, 'inventory'));
+      const allInventoryByVariant = new Map<string, { id: string; quantity: number; store_id: string }[]>();
+      allInventorySnap.docs.forEach(doc => {
         const inv = doc.data() as Inventory;
-        existingInventoryByVariant.set(inv.variant_id, {
+        if (!allInventoryByVariant.has(inv.variant_id)) {
+          allInventoryByVariant.set(inv.variant_id, []);
+        }
+        allInventoryByVariant.get(inv.variant_id)!.push({
           id: doc.id,
           quantity: inv.quantity || 0,
+          store_id: inv.store_id || '',
         });
       });
 
@@ -374,10 +374,17 @@ export default function Products() {
             const newStock = variantStocks.get(variantKey);
 
             if (newStock !== undefined) {
-              const existingStoreInventory = existingInventoryByVariant.get(existingVariant.id);
+              const allInventories = allInventoryByVariant.get(existingVariant.id) || [];
+              const currentStoreInventory = allInventories.find(inv => inv.store_id === selectedStoreId);
 
-              if (existingStoreInventory) {
-                batch.update(doc(db, 'inventory', existingStoreInventory.id), {
+              if (currentStoreInventory) {
+                batch.update(doc(db, 'inventory', currentStoreInventory.id), {
+                  quantity: newStock,
+                  store_id: selectedStoreId,
+                  updated_at: new Date().toISOString(),
+                });
+              } else if (allInventories.length > 0) {
+                batch.update(doc(db, 'inventory', allInventories[0].id), {
                   quantity: newStock,
                   store_id: selectedStoreId,
                   updated_at: new Date().toISOString(),
@@ -442,10 +449,10 @@ export default function Products() {
       existingVariants.forEach(variant => {
         const variantKey = `${variant.size_id}-${variant.color_id}`;
         if (!currentKeys.has(variantKey)) {
-          const existingStoreInventory = existingInventoryByVariant.get(variant.id);
-          if (existingStoreInventory) {
-            batch.delete(doc(db, 'inventory', existingStoreInventory.id));
-          }
+          const allInventories = allInventoryByVariant.get(variant.id) || [];
+          allInventories.forEach(inv => {
+            batch.delete(doc(db, 'inventory', inv.id));
+          });
           batch.delete(doc(db, 'product_variants', variant.id));
         }
       });
@@ -562,10 +569,31 @@ export default function Products() {
       barcodes.set(key, variant.barcode || '');
     });
 
-    const firstStoreWithInventory = stores[0]?.id || '';
-    setSelectedStoreId(firstStoreWithInventory);
+    let storeIdToSelect = stores[0]?.id || '';
 
-    await loadStockForStore(productVariants, firstStoreWithInventory);
+    if (productVariants.length > 0) {
+      const variantIds = productVariants.map(v => v.id);
+      const inventorySnap = await getDocs(collection(db, 'inventory'));
+
+      const storeIdCounts = new Map<string, number>();
+
+      for (const docSnap of inventorySnap.docs) {
+        const inv = docSnap.data() as Inventory;
+        if (variantIds.includes(inv.variant_id) && inv.store_id) {
+          const count = storeIdCounts.get(inv.store_id) || 0;
+          storeIdCounts.set(inv.store_id, count + 1);
+        }
+      }
+
+      if (storeIdCounts.size > 0) {
+        const [mostCommonStoreId] = Array.from(storeIdCounts.entries())
+          .sort((a, b) => b[1] - a[1])[0];
+        storeIdToSelect = mostCommonStoreId;
+      }
+    }
+
+    setSelectedStoreId(storeIdToSelect);
+    await loadStockForStore(productVariants, storeIdToSelect);
 
     setSelectedSizeIds(selectedSizes);
     setSelectedColorIds(selectedColors);

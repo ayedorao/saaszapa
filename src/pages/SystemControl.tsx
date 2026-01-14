@@ -3,7 +3,8 @@ import { collection, getDocs, addDoc, updateDoc, doc, orderBy, query } from 'fir
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle } from 'lucide-react';
+import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle, Database } from 'lucide-react';
+import { cleanupDuplicateInventory } from '../utils/cleanupInventory';
 
 interface Announcement {
   id: string;
@@ -50,6 +51,7 @@ export default function SystemControl() {
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'announcements' | 'attempts' | 'incidents'>('announcements');
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  const [cleaningInventory, setCleaningInventory] = useState(false);
   const [formData, setFormData] = useState({
     type: 'info' as 'info' | 'minor' | 'critical' | 'update',
     title: '',
@@ -217,6 +219,23 @@ export default function SystemControl() {
     return labels[type] || type;
   }
 
+  async function handleCleanupInventory() {
+    if (!confirm('¿Estás seguro de que deseas limpiar los inventarios duplicados? Esta acción consolidará todos los inventarios duplicados en un solo registro por variante.')) {
+      return;
+    }
+
+    setCleaningInventory(true);
+    try {
+      const result = await cleanupDuplicateInventory();
+      alert(`Limpieza completada:\n- ${result.duplicatesFound} variantes con duplicados\n- ${result.duplicatesFixed} duplicados corregidos`);
+    } catch (error) {
+      console.error('Error durante la limpieza:', error);
+      alert('Error durante la limpieza del inventario. Revisa la consola para más detalles.');
+    } finally {
+      setCleaningInventory(false);
+    }
+  }
+
   function getTypeColor(type: string) {
     const colors: Record<string, string> = {
       info: 'bg-blue-100 text-blue-800 border-blue-300',
@@ -274,15 +293,26 @@ export default function SystemControl() {
           <h1 className="text-3xl font-bold text-slate-900">Control de Sistema</h1>
           <p className="text-slate-600 mt-1">Gestiona anuncios, seguridad e incidentes del sistema</p>
         </div>
-        {activeTab === 'announcements' && (
+        <div className="flex items-center space-x-3">
           <button
-            onClick={() => setShowModal(true)}
-            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
+            onClick={handleCleanupInventory}
+            disabled={cleaningInventory}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center space-x-2 disabled:opacity-50"
+            title="Limpiar inventarios duplicados"
           >
-            <Plus className="w-5 h-5" />
-            <span>Nuevo Anuncio</span>
+            <Database className="w-5 h-5" />
+            <span>{cleaningInventory ? 'Limpiando...' : 'Limpiar Inventario'}</span>
           </button>
-        )}
+          {activeTab === 'announcements' && (
+            <button
+              onClick={() => setShowModal(true)}
+              className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
+            >
+              <Plus className="w-5 h-5" />
+              <span>Nuevo Anuncio</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200">
