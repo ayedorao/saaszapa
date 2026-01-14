@@ -16,6 +16,7 @@ import Stores from './pages/Stores';
 import CashRegisters from './pages/CashRegisters';
 import Chat from './pages/Chat';
 import ChatAudit from './pages/ChatAudit';
+import SystemControl from './pages/SystemControl';
 
 function App() {
   const { user, loading } = useAuth();
@@ -74,6 +75,8 @@ function App() {
         return <Chat />;
       case 'chat-audit':
         return <ChatAudit />;
+      case 'system-control':
+        return <SystemControl />;
       case 'profile':
         return <Profile />;
       default:

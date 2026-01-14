@@ -3,7 +3,7 @@ import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/fi
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { Camera, Save, Mail, Phone, User, Shield, Building } from 'lucide-react';
+import { Camera, Save, Mail, Phone, User, Shield, Building, BookOpen } from 'lucide-react';
 
 export default function Profile() {
   const { user } = useAuth();
@@ -386,6 +386,23 @@ export default function Profile() {
             <span>Recomendado: Imagen cuadrada para mejor visualización</span>
           </li>
         </ul>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h3 className="text-lg font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+          <BookOpen className="w-5 h-5" />
+          <span>Tutorial del Sistema</span>
+        </h3>
+        <p className="text-slate-600 mb-4">
+          ¿Necesitas ayuda para usar el sistema? Reproduce el tutorial interactivo que te guiará paso a paso por todas las funcionalidades.
+        </p>
+        <button
+          onClick={() => window.dispatchEvent(new Event('showTutorial'))}
+          className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
+        >
+          <BookOpen className="w-5 h-5" />
+          <span>Ver Tutorial</span>
+        </button>
       </div>
     </div>
   );

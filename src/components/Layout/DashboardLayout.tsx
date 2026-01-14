@@ -1,6 +1,10 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUserRole } from '../../hooks/useUserRole';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import Tutorial from '../Tutorial';
+import AnnouncementBanner from '../AnnouncementBanner';
 import {
   ShoppingCart,
   Package,
@@ -19,6 +23,7 @@ import {
   Shield,
   Store,
   MessageCircle,
+  Bell,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -44,6 +49,7 @@ const navItems: NavItem[] = [
   { id: 'cash', label: 'Caja Registradora', icon: DollarSign, permission: 'cash_control' },
   { id: 'reports', label: 'Reportes', icon: BarChart3, permission: 'reports' },
   { id: 'chat', label: 'Chat Tiendas', icon: MessageCircle },
+  { id: 'system-control', label: 'Control de Sistema', icon: Bell, adminOnly: true },
   { id: 'users', label: 'Usuarios', icon: Shield, adminOnly: true },
   { id: 'stores', label: 'Tiendas', icon: Store, adminOnly: true },
   { id: 'registers', label: 'Cajas', icon: DollarSign, adminOnly: true },
@@ -54,6 +60,56 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
   const { user, signOut } = useAuth();
   const { profile, isAdmin } = useUserRole();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+
+  useEffect(() => {
+    checkTutorialStatus();
+  }, [user]);
+
+  useEffect(() => {
+    const handleShowTutorial = () => {
+      setShowTutorial(true);
+    };
+    window.addEventListener('showTutorial', handleShowTutorial);
+    return () => window.removeEventListener('showTutorial', handleShowTutorial);
+  }, []);
+
+  async function checkTutorialStatus() {
+    if (!user) return;
+
+    try {
+      const profileRef = doc(db, 'profiles', user.uid);
+      const profileSnap = await getDoc(profileRef);
+
+      if (profileSnap.exists()) {
+        const data = profileSnap.data();
+        if (!data.tutorial_completed) {
+          setShowTutorial(true);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking tutorial status:', error);
+    }
+  }
+
+  async function handleCompleteTutorial() {
+    if (!user) return;
+
+    try {
+      const profileRef = doc(db, 'profiles', user.uid);
+      await updateDoc(profileRef, {
+        tutorial_completed: true,
+        tutorial_completed_at: new Date().toISOString()
+      });
+      setShowTutorial(false);
+    } catch (error) {
+      console.error('Error completing tutorial:', error);
+    }
+  }
+
+  function handleCloseTutorial() {
+    setShowTutorial(false);
+  }
 
   const filteredNavItems = navItems.filter(item => {
     if (item.adminOnly) {
@@ -152,25 +208,28 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
       </aside>
 
       <div className="lg:pl-64">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                {sidebarOpen ? (
-                  <X className="w-6 h-6 text-slate-900" />
-                ) : (
-                  <Menu className="w-6 h-6 text-slate-900" />
-                )}
-              </button>
-              <h2 className="text-xl font-semibold text-slate-900">
-                {navItems.find(item => item.id === currentPage)?.label || 'Panel de Control'}
-              </h2>
+        <div className="sticky top-0 z-40">
+          <AnnouncementBanner />
+          <header className="bg-white border-b border-slate-200">
+            <div className="flex items-center justify-between px-6 py-4">
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => setSidebarOpen(!sidebarOpen)}
+                  className="lg:hidden p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  {sidebarOpen ? (
+                    <X className="w-6 h-6 text-slate-900" />
+                  ) : (
+                    <Menu className="w-6 h-6 text-slate-900" />
+                  )}
+                </button>
+                <h2 className="text-xl font-semibold text-slate-900">
+                  {navItems.find(item => item.id === currentPage)?.label || 'Panel de Control'}
+                </h2>
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        </div>
 
         <main className="p-6">
           {children}
@@ -181,6 +240,13 @@ export default function DashboardLayout({ children, currentPage }: DashboardLayo
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {showTutorial && (
+        <Tutorial
+          onComplete={handleCompleteTutorial}
+          onClose={handleCloseTutorial}
         />
       )}
     </div>

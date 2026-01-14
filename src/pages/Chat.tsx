@@ -16,6 +16,7 @@ export default function Chat() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -357,7 +358,8 @@ export default function Chat() {
                           <img
                             src={msg.image}
                             alt="Imagen compartida"
-                            className="max-w-xs rounded-lg mb-2"
+                            className="max-w-xs rounded-lg mb-2 cursor-pointer hover:opacity-90 transition-opacity"
+                            onClick={() => setZoomedImage(msg.image!)}
                           />
                         )}
                         {msg.message && <p className="text-sm whitespace-pre-wrap">{msg.message}</p>}
@@ -466,6 +468,28 @@ export default function Chat() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {zoomedImage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50"
+          onClick={() => setZoomedImage(null)}
+        >
+          <div className="relative max-w-5xl max-h-full">
+            <button
+              onClick={() => setZoomedImage(null)}
+              className="absolute -top-12 right-0 p-2 bg-white rounded-lg hover:bg-slate-100 transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <img
+              src={zoomedImage}
+              alt="Imagen ampliada"
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
         </div>
       )}
