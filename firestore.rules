@@ -10,21 +10,15 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function hasRole(role) {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/user_roles/$(request.auth.uid + '_' + role));
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'crisdoraodxb@gmail.com';
     }
 
-    function hasAnyRole() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/user_roles/$(request.auth.uid));
-    }
-
-    match /profiles/{userId} {
+    match /profiles/{profileId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isOwner(userId) || hasRole('admin');
-      allow delete: if false;
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
 
       function hasActiveProfile() {
         return exists(/databases/$(database)/documents/profiles/$(request.auth.uid)) &&
@@ -34,52 +28,32 @@ service cloud.firestore {
 
     match /roles/{roleId} {
       allow read: if isAuthenticated();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /user_roles/{userRoleId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAdmin();
     }
 
     match /products/{productId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /product_variants/{variantId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && validateVariantCreate();
-      allow update: if isAuthenticated() && validateVariantUpdate();
-      allow delete: if isAuthenticated();
-
-      function validateVariantCreate() {
-        return request.resource.data.barcode is string &&
-               request.resource.data.barcode.size() >= 10 &&
-               request.resource.data.sku is string &&
-               request.resource.data.product_id is string &&
-               request.resource.data.size_id is string &&
-               request.resource.data.color_id is string;
-      }
-
-      function validateVariantUpdate() {
-        return !('barcode' in request.resource.data) ||
-               request.resource.data.barcode == resource.data.barcode;
-      }
+      allow write: if isAuthenticated();
     }
 
     match /inventory/{inventoryId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /inventory_movements/{movementId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /sizes/{sizeId} {
@@ -99,106 +73,87 @@ service cloud.firestore {
 
     match /cash_sessions/{sessionId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /customers/{customerId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /sales/{saleId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /sale_items/{itemId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /payments/{paymentId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /returns/{returnId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /return_items/{itemId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /exchanges/{exchangeId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /exchange_items/{itemId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /promotions/{promotionId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /promotion_products/{promoProductId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAuthenticated();
+      allow write: if isAuthenticated();
     }
 
     match /stores/{storeId} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /audit_logs/{logId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /conversations/{conversationId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /announces/{announceId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /document_access_attempts/{attemptId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update, delete: if false;
+      allow write: if isAuthenticated();
     }
 
     match /system_incidents/{incidentId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
-      allow delete: if false;
+      allow write: if isAuthenticated();
     }
   }
 }
