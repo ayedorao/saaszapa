@@ -195,7 +195,7 @@ export default function Chat() {
       const newMessage: ChatMessage = {
         id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         message: message.trim(),
-        image: selectedImage || undefined,
+        ...(selectedImage && { image: selectedImage }),
         sender_store_id: currentStore.storeId,
         sender_store_name: currentStore.name,
         sender_user_id: user.uid,
