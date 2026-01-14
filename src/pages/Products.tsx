@@ -99,15 +99,32 @@ export default function Products() {
       const sizesMap = new Map(sizesData.map(s => [s.id, s]));
       const colorsMap = new Map(colorsData.map(c => [c.id, c]));
       const productsMap = new Map(productsData.map(p => [p.id, p]));
-      const inventoryMap = new Map(inventoryData.map(i => [i.variant_id, i]));
 
-      const enrichedVariants = variantsData.map(variant => ({
-        ...variant,
-        product: productsMap.get(variant.product_id),
-        size: sizesMap.get(variant.size_id),
-        color: colorsMap.get(variant.color_id),
-        inventory: inventoryMap.get(variant.id),
-      }));
+      const inventoryByVariant = new Map<string, Inventory[]>();
+      inventoryData.forEach(inv => {
+        if (!inventoryByVariant.has(inv.variant_id)) {
+          inventoryByVariant.set(inv.variant_id, []);
+        }
+        inventoryByVariant.get(inv.variant_id)!.push(inv);
+      });
+
+      const enrichedVariants = variantsData.map(variant => {
+        const inventories = inventoryByVariant.get(variant.id) || [];
+        const totalStock = inventories.reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+
+        const aggregatedInventory = inventories.length > 0 ? {
+          ...inventories[0],
+          quantity: totalStock,
+        } : undefined;
+
+        return {
+          ...variant,
+          product: productsMap.get(variant.product_id),
+          size: sizesMap.get(variant.size_id),
+          color: colorsMap.get(variant.color_id),
+          inventory: aggregatedInventory,
+        };
+      });
 
       setProducts(productsData);
       setVariants(enrichedVariants);
@@ -340,11 +357,23 @@ export default function Products() {
 
           if (existingVariant) {
             const newStock = variantStocks.get(variantKey);
-            if (newStock !== undefined && existingVariant.inventory?.id) {
-              batch.update(doc(db, 'inventory', existingVariant.inventory.id), {
-                quantity: newStock,
-                updated_at: new Date().toISOString(),
-              });
+
+            if (newStock !== undefined) {
+              if (existingVariant.inventory?.id && existingVariant.inventory.store_id === selectedStoreId) {
+                batch.update(doc(db, 'inventory', existingVariant.inventory.id), {
+                  quantity: newStock,
+                  updated_at: new Date().toISOString(),
+                });
+              } else {
+                const inventoryRef = doc(collection(db, 'inventory'));
+                batch.set(inventoryRef, {
+                  variant_id: existingVariant.id,
+                  quantity: newStock,
+                  min_stock: 5,
+                  store_id: selectedStoreId,
+                  updated_at: new Date().toISOString(),
+                });
+              }
             }
 
             const newBarcode = variantBarcodes.get(variantKey);
@@ -487,7 +516,7 @@ export default function Products() {
     return generateBarcode(formData.code, size?.name || '', color?.name || '');
   }
 
-  function openEditModal(product: Product) {
+  async function openEditModal(product: Product) {
     setSelectedProduct(product);
     setFormData({
       code: product.code,
@@ -505,24 +534,60 @@ export default function Products() {
     const productVariants = variantsByProduct.get(product.id) || [];
     const selectedSizes = new Set<string>();
     const selectedColors = new Set<string>();
-    const stocks = new Map<string, number>();
     const barcodes = new Map<string, string>();
 
     productVariants.forEach(variant => {
       selectedSizes.add(variant.size_id);
       selectedColors.add(variant.color_id);
       const key = `${variant.size_id}-${variant.color_id}`;
-      stocks.set(key, variant.inventory?.quantity || 0);
       barcodes.set(key, variant.barcode || '');
     });
 
-    const existingStoreId = productVariants[0]?.inventory?.store_id || (stores.length > 0 ? stores[0].id : '');
-    setSelectedStoreId(existingStoreId);
+    const firstStoreWithInventory = stores[0]?.id || '';
+    setSelectedStoreId(firstStoreWithInventory);
+
+    await loadStockForStore(productVariants, firstStoreWithInventory);
+
     setSelectedSizeIds(selectedSizes);
     setSelectedColorIds(selectedColors);
-    setVariantStocks(stocks);
     setVariantBarcodes(barcodes);
     setShowModal(true);
+  }
+
+  async function loadStockForStore(productVariants: VariantWithDetails[], storeId: string) {
+    if (!storeId) {
+      setVariantStocks(new Map());
+      return;
+    }
+
+    try {
+      const stocks = new Map<string, number>();
+      const variantIds = productVariants.map(v => v.id);
+
+      if (variantIds.length > 0) {
+        const inventoryQuery = query(
+          collection(db, 'inventory'),
+          where('store_id', '==', storeId)
+        );
+        const inventorySnap = await getDocs(inventoryQuery);
+
+        inventorySnap.docs.forEach(doc => {
+          const inv = doc.data() as Inventory;
+          if (variantIds.includes(inv.variant_id)) {
+            const variant = productVariants.find(v => v.id === inv.variant_id);
+            if (variant) {
+              const key = `${variant.size_id}-${variant.color_id}`;
+              stocks.set(key, inv.quantity || 0);
+            }
+          }
+        });
+      }
+
+      setVariantStocks(stocks);
+    } catch (error) {
+      console.error('Error loading stock for store:', error);
+      setVariantStocks(new Map());
+    }
   }
 
   function openBarcodeModal(variant: VariantWithDetails) {
@@ -1003,7 +1068,14 @@ export default function Products() {
                   </label>
                   <select
                     value={selectedStoreId}
-                    onChange={(e) => setSelectedStoreId(e.target.value)}
+                    onChange={(e) => {
+                      const newStoreId = e.target.value;
+                      setSelectedStoreId(newStoreId);
+                      if (selectedProduct && newStoreId) {
+                        const productVariants = variantsByProduct.get(selectedProduct.id) || [];
+                        loadStockForStore(productVariants, newStoreId);
+                      }
+                    }}
                     className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                     required
                   >
@@ -1014,7 +1086,7 @@ export default function Products() {
                   </select>
                   <p className="text-xs text-slate-500 mt-1">
                     {selectedProduct
-                      ? 'Los nuevos productos se agregarán a esta tienda. Los existentes mantienen su tienda.'
+                      ? 'Selecciona la tienda para ver y editar su inventario. Puedes crear inventario para diferentes tiendas.'
                       : 'Selecciona la tienda donde se registrará el inventario inicial de este producto.'
                     }
                   </p>
