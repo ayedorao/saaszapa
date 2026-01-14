@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useUserRole } from '../hooks/useUserRole';
 import { ProductVariant, Product, Size, Color, Inventory as InventoryType } from '../types/database';
 import { Search, Filter, ArrowUpDown, AlertTriangle, Package, RefreshCw, X } from 'lucide-react';
 
@@ -35,6 +36,7 @@ type SortDirection = 'asc' | 'desc';
 
 export default function Inventory() {
   const { user } = useAuth();
+  const { profile, isAdmin } = useUserRole();
   const [variants, setVariants] = useState<VariantWithDetails[]>([]);
   const [stores, setStores] = useState<StoreData[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('all');
@@ -52,14 +54,37 @@ export default function Inventory() {
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, [selectedStore]);
+    if (profile && profile.storeId && !isAdmin) {
+      setSelectedStore(profile.storeId);
+    }
+  }, [profile, isAdmin]);
+
+  useEffect(() => {
+    if (profile) {
+      loadData();
+    }
+  }, [selectedStore, profile]);
 
   async function loadData() {
     setLoading(true);
     try {
+      let productsQuery;
+      if (!isAdmin && profile?.storeId) {
+        productsQuery = query(
+          collection(db, 'products'),
+          where('store_id', '==', profile.storeId)
+        );
+      } else if (!isAdmin) {
+        productsQuery = query(
+          collection(db, 'products'),
+          where('store_id', '==', null)
+        );
+      } else {
+        productsQuery = collection(db, 'products');
+      }
+
       const [productsSnap, variantsSnap, sizesSnap, colorsSnap, inventorySnap, storesSnap] = await Promise.all([
-        getDocs(collection(db, 'products')),
+        getDocs(productsQuery),
         getDocs(query(collection(db, 'product_variants'), where('active', '==', true))),
         getDocs(collection(db, 'sizes')),
         getDocs(collection(db, 'colors')),
@@ -69,7 +94,10 @@ export default function Inventory() {
 
       const productsMap = new Map<string, Product>();
       productsSnap.docs.forEach(doc => {
-        productsMap.set(doc.id, { id: doc.id, ...doc.data() } as Product);
+        const product = { id: doc.id, ...doc.data() } as Product;
+        if (isAdmin || !profile?.storeId || product.store_id === profile.storeId || !product.store_id) {
+          productsMap.set(doc.id, product);
+        }
       });
 
       const sizesMap = new Map<string, Size>();
@@ -412,9 +440,10 @@ export default function Inventory() {
           <select
             value={selectedStore}
             onChange={(e) => setSelectedStore(e.target.value)}
-            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+            disabled={!isAdmin && profile?.storeId}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
-            <option value="all">Todas las Tiendas</option>
+            {isAdmin && <option value="all">Todas las Tiendas</option>}
             {stores.map(store => (
               <option key={store.id} value={store.id}>{store.name}</option>
             ))}

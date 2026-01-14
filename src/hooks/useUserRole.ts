@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -41,14 +41,18 @@ export function useUserRole() {
     if (!user) return;
 
     try {
-      const profileDoc = await getDoc(doc(db, 'profiles', user.uid));
+      const profilesQuery = query(collection(db, 'profiles'), where('uid', '==', user.uid));
+      const profilesSnap = await getDocs(profilesQuery);
 
-      if (profileDoc.exists()) {
+      if (!profilesSnap.empty) {
+        const profileDoc = profilesSnap.docs[0];
         const data = profileDoc.data() as UserProfile;
+        console.log('Perfil cargado:', { id: profileDoc.id, ...data });
         setProfile({ id: profileDoc.id, ...data });
         setIsAdmin(data.role === 'admin');
         setIsManager(data.role === 'manager' || data.role === 'admin');
       } else {
+        console.log('No se encontró perfil para uid:', user.uid);
         const masterEmail = 'crisdoraodxb@gmail.com';
         const isFirstUser = user.email === masterEmail;
 
