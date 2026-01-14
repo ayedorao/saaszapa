@@ -56,6 +56,7 @@ export default function Products() {
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
   const [variantStocks, setVariantStocks] = useState<Map<string, number>>(new Map());
   const [variantBarcodes, setVariantBarcodes] = useState<Map<string, string>>(new Map());
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
 
   useEffect(() => {
     loadAllData();
@@ -152,6 +153,9 @@ export default function Products() {
       }
 
       setStores(storesData);
+      if (storesData.length > 0 && !selectedStoreId) {
+        setSelectedStoreId(storesData[0].id);
+      }
     } catch (error) {
       console.error('Error loading stores:', error);
       throw error;
@@ -205,6 +209,11 @@ export default function Products() {
       return;
     }
 
+    if (!selectedStoreId) {
+      alert('Por favor selecciona una tienda para el inventario');
+      return;
+    }
+
     setLoading(true);
     try {
       const productData: Omit<Product, 'id'> = {
@@ -226,7 +235,6 @@ export default function Products() {
       const productDocRef = await addDoc(collection(db, 'products'), productData);
       const productId = productDocRef.id;
 
-      const defaultStoreId = stores[0].id;
       const batch = writeBatch(db);
       let newVariantsCount = 0;
 
@@ -271,7 +279,7 @@ export default function Products() {
             variant_id: variantRef.id,
             quantity: stock,
             min_stock: 5,
-            store_id: defaultStoreId,
+            store_id: selectedStoreId,
             updated_at: new Date().toISOString(),
           });
 
@@ -295,6 +303,11 @@ export default function Products() {
 
   async function updateProduct() {
     if (!selectedProduct) return;
+
+    if (!selectedStoreId) {
+      alert('Por favor selecciona una tienda para el inventario');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -372,7 +385,7 @@ export default function Products() {
               variant_id: variantRef.id,
               quantity: stock,
               min_stock: 5,
-              store_id: stores[0]?.id || 'main',
+              store_id: selectedStoreId,
               updated_at: new Date().toISOString(),
             });
           }
@@ -455,6 +468,7 @@ export default function Products() {
     setSelectedColorIds(new Set());
     setVariantStocks(new Map());
     setVariantBarcodes(new Map());
+    setSelectedStoreId(stores.length > 0 ? stores[0].id : '');
   }
 
   function toggleProductExpansion(productId: string) {
@@ -502,6 +516,8 @@ export default function Products() {
       barcodes.set(key, variant.barcode || '');
     });
 
+    const existingStoreId = productVariants[0]?.inventory?.store_id || (stores.length > 0 ? stores[0].id : '');
+    setSelectedStoreId(existingStoreId);
     setSelectedSizeIds(selectedSizes);
     setSelectedColorIds(selectedColors);
     setVariantStocks(stocks);
@@ -980,6 +996,30 @@ export default function Products() {
                     Selecciona o deselecciona tallas y colores para agregar o eliminar variantes
                   </p>
                 )}
+
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Tienda para Inventario *
+                  </label>
+                  <select
+                    value={selectedStoreId}
+                    onChange={(e) => setSelectedStoreId(e.target.value)}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Seleccionar tienda...</option>
+                    {stores.map(store => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {selectedProduct
+                      ? 'Los nuevos productos se agregarán a esta tienda. Los existentes mantienen su tienda.'
+                      : 'Selecciona la tienda donde se registrará el inventario inicial de este producto.'
+                    }
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">

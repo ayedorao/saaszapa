@@ -87,6 +87,7 @@ export interface ProductVariant {
 export interface Inventory {
   id: string;
   variant_id: string;
+  store_id: string;
   quantity: number;
   min_stock: number;
   max_stock?: number;
