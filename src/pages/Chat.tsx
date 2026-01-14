@@ -55,7 +55,7 @@ export default function Chat() {
 
   async function loadStores() {
     try {
-      const snapshot = await getDocs(query(collection(db, 'stores'), where('active', '==', true)));
+      const snapshot = await getDocs(collection(db, 'stores'));
       const storesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
       setStores(storesData);
 
@@ -87,20 +87,28 @@ export default function Chat() {
       });
 
       convos.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
-      setConversations(convos);
 
       const publicRoom = convos.find(c => c.type === 'public');
-      if (publicRoom) {
-        setActiveConversation(publicRoom);
-      } else {
-        await createPublicRoom();
+      if (!publicRoom) {
+        const newPublicRoom = await createPublicRoom();
+        if (newPublicRoom) {
+          convos.unshift(newPublicRoom);
+        }
+      }
+
+      setConversations(convos);
+
+      const roomToActivate = convos.find(c => c.type === 'public') || convos[0];
+      if (roomToActivate) {
+        setActiveConversation(roomToActivate);
       }
     } catch (error) {
       console.error('Error loading conversations:', error);
+      alert('Error al cargar las conversaciones. Por favor, recarga la página.');
     }
   }
 
-  async function createPublicRoom() {
+  async function createPublicRoom(): Promise<Conversation | null> {
     try {
       const publicRoomData: Omit<Conversation, 'id'> = {
         conversation_id: 'publicroom',
@@ -114,10 +122,11 @@ export default function Chat() {
 
       const docRef = await addDoc(collection(db, 'conversations'), publicRoomData);
       const newRoom: Conversation = { id: docRef.id, ...publicRoomData };
-      setConversations(prev => [newRoom, ...prev]);
-      setActiveConversation(newRoom);
+      return newRoom;
     } catch (error) {
       console.error('Error creating public room:', error);
+      alert('Error al crear la sala pública. Por favor, verifica tus permisos.');
+      return null;
     }
   }
 
