@@ -1,113 +1,98 @@
-import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, getDoc } from 'firebase/firestore';
+import { useState, useEffect, useMemo } from 'react';
+import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { ProductVariant, InventoryMovement, Product, Size, Color, Inventory } from '../types/database';
-import { Search, Plus, Minus, AlertTriangle, Package, History, Printer, Store, RefreshCw } from 'lucide-react';
-import Barcode from 'react-barcode';
-import { QRCodeSVG } from 'qrcode.react';
+import { ProductVariant, Product, Size, Color, Inventory as InventoryType } from '../types/database';
+import { Search, Filter, ArrowUpDown, AlertTriangle, Package, RefreshCw, X } from 'lucide-react';
 
 interface VariantWithDetails extends ProductVariant {
   product?: Product;
   size?: Size;
   color?: Color;
-  inventory?: Inventory;
+  inventory?: InventoryType;
 }
 
-interface Store {
+interface ProductRow {
+  productId: string;
+  code: string;
+  name: string;
+  brand: string;
+  category: string;
+  finish: string;
+  basePrice: number;
+  baseCost: number;
+  variants: VariantWithDetails[];
+}
+
+interface StoreData {
   id: string;
   name: string;
-  address: string;
   active: boolean;
 }
 
-export default function InventoryPage() {
+type SortField = 'code' | 'name' | 'brand' | 'category' | 'basePrice' | 'totalStock';
+type SortDirection = 'asc' | 'desc';
+
+export default function Inventory() {
   const { user } = useAuth();
   const [variants, setVariants] = useState<VariantWithDetails[]>([]);
-  const [stores, setStores] = useState<Store[]>([]);
+  const [stores, setStores] = useState<StoreData[]>([]);
   const [selectedStore, setSelectedStore] = useState<string>('all');
-  const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showLowStock, setShowLowStock] = useState(false);
-  const [showAdjustModal, setShowAdjustModal] = useState(false);
-  const [showMovementsModal, setShowMovementsModal] = useState(false);
-  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [brandFilter, setBrandFilter] = useState('all');
+  const [showLowStockOnly, setShowLowStockOnly] = useState(false);
+  const [sortField, setSortField] = useState<SortField>('code');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [loading, setLoading] = useState(true);
+  const [showStockModal, setShowStockModal] = useState(false);
   const [selectedVariant, setSelectedVariant] = useState<VariantWithDetails | null>(null);
-  const [adjustmentQty, setAdjustmentQty] = useState('');
+  const [newStock, setNewStock] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [dataLoading, setDataLoading] = useState(true);
-  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+  const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
-    loadInventory();
-    loadStores();
+    loadData();
   }, [selectedStore]);
 
-  async function loadStores() {
+  async function loadData() {
+    setLoading(true);
     try {
-      const storesQuery = query(collection(db, 'stores'), where('active', '==', true));
-      const storesSnapshot = await getDocs(storesQuery);
-      const storesData = storesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
-
-      if (storesData.length === 0) {
-        const mainStore = {
-          name: 'Tienda Principal',
-          address: '',
-          active: true,
-          created_at: new Date().toISOString(),
-        };
-        const mainStoreRef = await addDoc(collection(db, 'stores'), mainStore);
-        storesData.push({ id: mainStoreRef.id, ...mainStore });
-      }
-
-      setStores(storesData);
-      console.log(`Loaded ${storesData.length} stores`);
-    } catch (err) {
-      console.error('Error loading stores:', err);
-    }
-  }
-
-  async function loadInventory() {
-    setDataLoading(true);
-    try {
-      const startTime = performance.now();
-
-      const [variantsSnapshot, productsSnapshot, sizesSnapshot, colorsSnapshot, inventorySnapshot] = await Promise.all([
-        getDocs(query(collection(db, 'product_variants'), where('active', '==', true))),
+      const [productsSnap, variantsSnap, sizesSnap, colorsSnap, inventorySnap, storesSnap] = await Promise.all([
         getDocs(collection(db, 'products')),
+        getDocs(query(collection(db, 'product_variants'), where('active', '==', true))),
         getDocs(collection(db, 'sizes')),
         getDocs(collection(db, 'colors')),
         getDocs(collection(db, 'inventory')),
+        getDocs(query(collection(db, 'stores'), where('active', '==', true))),
       ]);
 
       const productsMap = new Map<string, Product>();
-      productsSnapshot.docs.forEach(doc => {
+      productsSnap.docs.forEach(doc => {
         productsMap.set(doc.id, { id: doc.id, ...doc.data() } as Product);
       });
 
       const sizesMap = new Map<string, Size>();
-      sizesSnapshot.docs.forEach(doc => {
+      sizesSnap.docs.forEach(doc => {
         sizesMap.set(doc.id, { id: doc.id, ...doc.data() } as Size);
       });
 
       const colorsMap = new Map<string, Color>();
-      colorsSnapshot.docs.forEach(doc => {
+      colorsSnap.docs.forEach(doc => {
         colorsMap.set(doc.id, { id: doc.id, ...doc.data() } as Color);
       });
 
-      const inventoryByVariant = new Map<string, Inventory[]>();
-      inventorySnapshot.docs.forEach(doc => {
-        const inv = { id: doc.id, ...doc.data() } as Inventory;
+      const inventoryByVariant = new Map<string, InventoryType[]>();
+      inventorySnap.docs.forEach(doc => {
+        const inv = { id: doc.id, ...doc.data() } as InventoryType;
         if (!inventoryByVariant.has(inv.variant_id)) {
           inventoryByVariant.set(inv.variant_id, []);
         }
         inventoryByVariant.get(inv.variant_id)!.push(inv);
       });
 
-      const variantsData = variantsSnapshot.docs.map(doc => {
+      const variantsData = variantsSnap.docs.map(doc => {
         const variant = { id: doc.id, ...doc.data() } as VariantWithDetails;
-
         variant.product = productsMap.get(variant.product_id);
         variant.size = sizesMap.get(variant.size_id);
         variant.color = colorsMap.get(variant.color_id);
@@ -122,183 +107,223 @@ export default function InventoryPage() {
             };
           } else {
             const storeInventory = inventories.find(inv => inv.store_id === selectedStore);
-            variant.inventory = storeInventory || { quantity: 0, min_stock: 5 } as Inventory;
+            variant.inventory = storeInventory || { quantity: 0, min_stock: 5 } as InventoryType;
           }
         } else {
-          variant.inventory = { quantity: 0, min_stock: 5 } as Inventory;
+          variant.inventory = { quantity: 0, min_stock: 5 } as InventoryType;
         }
 
         return variant;
       });
 
-      const endTime = performance.now();
-      console.log(`✅ Loaded ${variantsData.length} variants in ${(endTime - startTime).toFixed(0)}ms`);
+      const storesData = storesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as StoreData[];
+      if (storesData.length === 0) {
+        const mainStore = {
+          name: 'Tienda Principal',
+          address: '',
+          active: true,
+          created_at: new Date().toISOString(),
+        };
+        const mainStoreRef = await addDoc(collection(db, 'stores'), mainStore);
+        storesData.push({ id: mainStoreRef.id, name: mainStore.name, active: true });
+      }
 
+      setStores(storesData);
       setVariants(variantsData);
-    } catch (err) {
-      console.error('Error loading inventory:', err);
+    } catch (error) {
+      console.error('Error loading data:', error);
     } finally {
-      setDataLoading(false);
+      setLoading(false);
     }
   }
 
-  async function handleAdjustment(type: 'add' | 'remove') {
-    if (!user || !selectedVariant || !adjustmentQty) return;
+  const productRows = useMemo(() => {
+    const rowsMap = new Map<string, ProductRow>();
 
-    const qty = parseInt(adjustmentQty);
-    if (isNaN(qty) || qty <= 0) {
-      alert('Por favor ingrese una cantidad válida');
+    variants.forEach(variant => {
+      if (!variant.product) return;
+
+      const productId = variant.product.id;
+      if (!rowsMap.has(productId)) {
+        rowsMap.set(productId, {
+          productId,
+          code: variant.product.code,
+          name: variant.product.name,
+          brand: variant.product.brand,
+          category: variant.product.category || '',
+          finish: variant.product.finish,
+          basePrice: variant.product.base_price,
+          baseCost: variant.product.base_cost,
+          variants: [],
+        });
+      }
+      rowsMap.get(productId)!.variants.push(variant);
+    });
+
+    return Array.from(rowsMap.values());
+  }, [variants]);
+
+  const filteredAndSortedRows = useMemo(() => {
+    let filtered = productRows;
+
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(row =>
+        row.code.toLowerCase().includes(term) ||
+        row.name.toLowerCase().includes(term) ||
+        row.brand.toLowerCase().includes(term) ||
+        row.category.toLowerCase().includes(term)
+      );
+    }
+
+    if (categoryFilter !== 'all') {
+      filtered = filtered.filter(row => row.category === categoryFilter);
+    }
+
+    if (brandFilter !== 'all') {
+      filtered = filtered.filter(row => row.brand === brandFilter);
+    }
+
+    if (showLowStockOnly) {
+      filtered = filtered.filter(row =>
+        row.variants.some(v => {
+          const stock = v.inventory?.quantity || 0;
+          const minStock = v.inventory?.min_stock || 0;
+          return stock <= minStock;
+        })
+      );
+    }
+
+    filtered.sort((a, b) => {
+      let aVal: string | number;
+      let bVal: string | number;
+
+      switch (sortField) {
+        case 'totalStock':
+          aVal = a.variants.reduce((sum, v) => sum + (v.inventory?.quantity || 0), 0);
+          bVal = b.variants.reduce((sum, v) => sum + (v.inventory?.quantity || 0), 0);
+          break;
+        case 'basePrice':
+          aVal = a.basePrice;
+          bVal = b.basePrice;
+          break;
+        default:
+          aVal = a[sortField] || '';
+          bVal = b[sortField] || '';
+      }
+
+      if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortDirection === 'asc'
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      return sortDirection === 'asc'
+        ? (aVal as number) - (bVal as number)
+        : (bVal as number) - (aVal as number);
+    });
+
+    return filtered;
+  }, [productRows, searchTerm, categoryFilter, brandFilter, showLowStockOnly, sortField, sortDirection]);
+
+  const categories = useMemo(() => {
+    const cats = new Set(productRows.map(r => r.category).filter(Boolean));
+    return Array.from(cats).sort();
+  }, [productRows]);
+
+  const brands = useMemo(() => {
+    const brds = new Set(productRows.map(r => r.brand).filter(Boolean));
+    return Array.from(brds).sort();
+  }, [productRows]);
+
+  const lowStockCount = useMemo(() => {
+    return variants.filter(v => {
+      const stock = v.inventory?.quantity || 0;
+      const minStock = v.inventory?.min_stock || 0;
+      return stock <= minStock;
+    }).length;
+  }, [variants]);
+
+  function handleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  }
+
+  function openStockModal(variant: VariantWithDetails) {
+    setSelectedVariant(variant);
+    setNewStock((variant.inventory?.quantity || 0).toString());
+    setAdjustmentReason('');
+    setShowStockModal(true);
+  }
+
+  async function updateStock() {
+    if (!selectedVariant || !user) return;
+
+    const qty = parseInt(newStock);
+    if (isNaN(qty) || qty < 0) {
+      alert('Por favor ingrese una cantidad válida (mayor o igual a 0)');
       return;
     }
 
-    setLoading(true);
+    setUpdating(true);
     try {
       const currentQty = selectedVariant.inventory?.quantity || 0;
-      const newQty = type === 'add' ? currentQty + qty : currentQty - qty;
-
-      if (newQty < 0) {
-        alert('No se puede reducir el stock por debajo de 0');
-        setLoading(false);
-        return;
-      }
-
       const inventoryId = selectedVariant.inventory?.id;
+
       if (!inventoryId) {
         alert('Registro de inventario no encontrado');
-        setLoading(false);
         return;
       }
 
       await updateDoc(doc(db, 'inventory', inventoryId), {
-        quantity: newQty,
+        quantity: qty,
         updated_at: new Date().toISOString(),
       });
 
       await addDoc(collection(db, 'inventory_movements'), {
         variant_id: selectedVariant.id,
-        movement_type: type === 'add' ? 'adjustment_in' : 'adjustment_out',
-        quantity: qty,
+        movement_type: qty > currentQty ? 'adjustment_in' : 'adjustment_out',
+        quantity: Math.abs(qty - currentQty),
         quantity_before: currentQty,
-        quantity_after: newQty,
+        quantity_after: qty,
         reference_type: 'manual_adjustment',
         reason: adjustmentReason || null,
         created_by: user.uid,
         created_at: new Date().toISOString(),
       });
 
-      alert(`Stock ${type === 'add' ? 'agregado' : 'removido'} exitosamente`);
-      setShowAdjustModal(false);
-      setAdjustmentQty('');
-      setAdjustmentReason('');
-      loadInventory();
+      setShowStockModal(false);
+      await loadData();
     } catch (error) {
-      console.error('Error adjusting inventory:', error);
-      alert('Error al ajustar inventario');
+      console.error('Error updating stock:', error);
+      alert('Error al actualizar el stock');
     } finally {
-      setLoading(false);
+      setUpdating(false);
     }
   }
 
-  async function loadMovements(variantId: string) {
-    const q = query(
-      collection(db, 'inventory_movements'),
-      where('variant_id', '==', variantId),
-      orderBy('created_at', 'desc')
-    );
-    const snapshot = await getDocs(q);
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as InventoryMovement[];
-    setMovements(data);
+  function getSizeGroups(variants: VariantWithDetails[]) {
+    const groups = new Map<string, VariantWithDetails[]>();
+    variants.forEach(v => {
+      const colorKey = `${v.color?.name || 'Sin color'}`;
+      if (!groups.has(colorKey)) {
+        groups.set(colorKey, []);
+      }
+      groups.get(colorKey)!.push(v);
+    });
+
+    Array.from(groups.values()).forEach(group => {
+      group.sort((a, b) => (a.size?.sort_order || 0) - (b.size?.sort_order || 0));
+    });
+
+    return groups;
   }
 
-  function openAdjustModal(variant: VariantWithDetails) {
-    setSelectedVariant(variant);
-    setShowAdjustModal(true);
-  }
-
-  async function openMovementsModal(variant: VariantWithDetails) {
-    setSelectedVariant(variant);
-    await loadMovements(variant.id);
-    setShowMovementsModal(true);
-  }
-
-  function openLabelModal(variant: VariantWithDetails) {
-    setSelectedVariant(variant);
-    setShowLabelModal(true);
-  }
-
-  function toggleProductExpansion(productId: string) {
-    const newExpanded = new Set(expandedProducts);
-    if (newExpanded.has(productId)) {
-      newExpanded.delete(productId);
-    } else {
-      newExpanded.add(productId);
-    }
-    setExpandedProducts(newExpanded);
-  }
-
-  function printLabel() {
-    const printContent = document.getElementById('printable-label');
-    if (!printContent) return;
-
-    const printWindow = window.open('', '', 'width=800,height=600');
-    if (!printWindow) return;
-
-    printWindow.document.write('<html><head><title>Etiqueta</title>');
-    printWindow.document.write('<style>');
-    printWindow.document.write(`
-      @page { size: 4in 2in; margin: 0; }
-      body { margin: 0; padding: 10px; font-family: Arial, sans-serif; }
-      .label { width: 4in; height: 2in; display: flex; flex-direction: column; justify-content: space-between; }
-      .label-header { font-size: 10px; font-weight: bold; margin-bottom: 4px; }
-      .label-row { display: flex; justify-content: space-between; font-size: 8px; margin: 2px 0; }
-      .label-barcode { text-align: center; margin: 6px 0; }
-      .label-sku { text-align: center; font-size: 7px; font-weight: bold; margin-top: 4px; }
-    `);
-    printWindow.document.write('</style></head><body>');
-    printWindow.document.write(printContent.innerHTML);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
-  }
-
-  const variantsByProduct = new Map<string, VariantWithDetails[]>();
-  variants.forEach(variant => {
-    if (!variant.product_id) return;
-    if (!variantsByProduct.has(variant.product_id)) {
-      variantsByProduct.set(variant.product_id, []);
-    }
-    variantsByProduct.get(variant.product_id)!.push(variant);
-  });
-
-  const productsList = Array.from(variantsByProduct.entries()).map(([productId, productVariants]) => {
-    const product = productVariants[0]?.product;
-    return { product, variants: productVariants };
-  });
-
-  const filteredProducts = productsList.filter(item => {
-    const matchesSearch = item.variants.some(v =>
-      v.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.product?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.product?.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      v.product?.brand?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-    const matchesLowStock = !showLowStock || item.variants.some(v =>
-      v.inventory && v.inventory.quantity <= (v.inventory.min_stock || 0)
-    );
-
-    return matchesSearch && matchesLowStock;
-  });
-
-  const lowStockCount = variants.filter(v =>
-    v.inventory && v.inventory.quantity <= (v.inventory.min_stock || 0)
-  ).length;
-
-  if (dataLoading) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
@@ -310,486 +335,333 @@ export default function InventoryPage() {
   }
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Gestión de Inventario</h1>
-        <p className="text-slate-600">Monitorear y ajustar niveles de stock</p>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">Inventario</h1>
+          <p className="text-slate-600 mt-1">Gestión de stock por producto y talla</p>
+        </div>
+        <button
+          onClick={loadData}
+          className="inline-flex items-center px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-colors"
+        >
+          <RefreshCw className={`w-5 h-5 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Actualizar
+        </button>
       </div>
 
       {lowStockCount > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
           <div className="flex items-center space-x-3">
             <AlertTriangle className="w-6 h-6 text-amber-600" />
             <div>
               <p className="font-semibold text-amber-900">Alerta de Stock Bajo</p>
               <p className="text-sm text-amber-700">
-                {lowStockCount} {lowStockCount === 1 ? 'artículo' : 'artículos'} con stock bajo
+                {lowStockCount} {lowStockCount === 1 ? 'variante' : 'variantes'} con stock bajo o agotado
               </p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
             <input
               type="text"
+              placeholder="Buscar productos..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Buscar por SKU o nombre de producto..."
-              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
             />
           </div>
+
+          <select
+            value={selectedStore}
+            onChange={(e) => setSelectedStore(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          >
+            <option value="all">Todas las Tiendas</option>
+            {stores.map(store => (
+              <option key={store.id} value={store.id}>{store.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          >
+            <option value="all">Todas las Categorías</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          <select
+            value={brandFilter}
+            onChange={(e) => setBrandFilter(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+          >
+            <option value="all">Todas las Marcas</option>
+            {brands.map(brand => (
+              <option key={brand} value={brand}>{brand}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <div className="relative">
-            <Store className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-            <select
-              value={selectedStore}
-              onChange={(e) => setSelectedStore(e.target.value)}
-              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent appearance-none"
-            >
-              <option value="all">Todas las Tiendas</option>
-              {stores.map(store => (
-                <option key={store.id} value={store.id}>{store.name}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center space-x-3 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-          <label className="flex items-center space-x-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showLowStock}
-              onChange={(e) => setShowLowStock(e.target.checked)}
-              className="rounded"
-            />
-            <span className="text-sm font-medium text-slate-700">Solo stock bajo</span>
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            id="lowStock"
+            checked={showLowStockOnly}
+            onChange={(e) => setShowLowStockOnly(e.target.checked)}
+            className="rounded"
+          />
+          <label htmlFor="lowStock" className="text-sm font-medium text-slate-700 cursor-pointer">
+            Mostrar solo productos con stock bajo
           </label>
         </div>
       </div>
 
-      {filteredProducts.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-          <Package className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">No hay productos en inventario</h3>
-          <p className="text-slate-600">Los productos aparecerán aquí una vez agregados</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filteredProducts.map(({ product, variants: productVariants }) => {
-            if (!product) return null;
-
-            const isExpanded = expandedProducts.has(product.id);
-            const variantsByColor = new Map<string, VariantWithDetails[]>();
-            productVariants.forEach(variant => {
-              const colorId = variant.color_id;
-              if (!variantsByColor.has(colorId)) {
-                variantsByColor.set(colorId, []);
-              }
-              variantsByColor.get(colorId)!.push(variant);
-            });
-
-            const allColors = Array.from(variantsByColor.keys())
-              .map(colorId => {
-                const variant = productVariants.find(v => v.color_id === colorId);
-                return variant?.color;
-              })
-              .filter(Boolean);
-
-            const totalStock = productVariants.reduce((sum, v) => sum + (v.inventory?.quantity || 0), 0);
-            const hasLowStock = productVariants.some(v =>
-              v.inventory && v.inventory.quantity <= (v.inventory.min_stock || 0)
-            );
-
-            return (
-              <div
-                key={product.id}
-                className={`bg-white rounded-xl shadow-sm border overflow-hidden ${
-                  hasLowStock ? 'border-amber-300' : 'border-slate-200'
-                }`}
-              >
-                <div
-                  className={`px-6 py-4 cursor-pointer transition-colors ${
-                    hasLowStock ? 'bg-amber-50 hover:bg-amber-100' : 'bg-slate-50 hover:bg-slate-100'
-                  }`}
-                  onClick={() => toggleProductExpansion(product.id)}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <th
+                  onClick={() => handleSort('code')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <h3 className="text-lg font-bold text-slate-900">{product.brand} - {product.name}</h3>
-                        {hasLowStock && (
-                          <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                            <AlertTriangle className="w-3 h-3 mr-1" />
-                            Stock Bajo
-                          </span>
-                        )}
-                        <span className="text-slate-400">{isExpanded ? '▼' : '▶'}</span>
-                      </div>
-                      <p className="text-sm text-slate-600 mt-1">
-                        {product.finish} | Código: {product.code}
-                      </p>
-                    </div>
-
-                    {!isExpanded && (
-                      <div className="flex items-center space-x-4">
-                        <div>
-                          <p className="text-xs text-slate-600">Stock Total</p>
-                          <p className="text-xl font-bold text-slate-900">{totalStock}</p>
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {allColors.slice(0, 3).map((color, idx) => (
-                            <span
-                              key={idx}
-                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-200 text-slate-700"
-                            >
-                              {color?.name}
-                            </span>
-                          ))}
-                          {allColors.length > 3 && (
-                            <span className="text-xs text-slate-500">+{allColors.length - 3}</span>
-                          )}
-                        </div>
-                      </div>
-                    )}
+                  <div className="flex items-center space-x-1">
+                    <span>Código</span>
+                    <ArrowUpDown className="w-4 h-4" />
                   </div>
-                </div>
+                </th>
+                <th
+                  onClick={() => handleSort('brand')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Marca</span>
+                    <ArrowUpDown className="w-4 h-4" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('name')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Nombre</span>
+                    <ArrowUpDown className="w-4 h-4" />
+                  </div>
+                </th>
+                <th
+                  onClick={() => handleSort('category')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Categoría</span>
+                    <ArrowUpDown className="w-4 h-4" />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Acabado
+                </th>
+                <th
+                  onClick={() => handleSort('basePrice')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Precio</span>
+                    <ArrowUpDown className="w-4 h-4" />
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider">
+                  Tallas y Stock
+                </th>
+                <th
+                  onClick={() => handleSort('totalStock')}
+                  className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
+                >
+                  <div className="flex items-center space-x-1">
+                    <span>Stock Total</span>
+                    <ArrowUpDown className="w-4 h-4" />
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filteredAndSortedRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                    <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                    <p>No se encontraron productos</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedRows.map(row => {
+                  const totalStock = row.variants.reduce((sum, v) => sum + (v.inventory?.quantity || 0), 0);
+                  const hasLowStock = row.variants.some(v => {
+                    const stock = v.inventory?.quantity || 0;
+                    const minStock = v.inventory?.min_stock || 0;
+                    return stock <= minStock;
+                  });
+                  const sizeGroups = getSizeGroups(row.variants);
 
-                {isExpanded && (
-                  <div className="p-6 border-t border-slate-200">
-                    <div className="space-y-4">
-                    {Array.from(variantsByColor.entries()).map(([colorId, colorVariants]) => {
-                      const color = colorVariants[0]?.color;
-                      const sortedVariants = colorVariants.sort((a, b) => {
-                        const sizeA = a.size?.sort_order || 0;
-                        const sizeB = b.size?.sort_order || 0;
-                        return sizeA - sizeB;
-                      });
+                  return (
+                    <tr key={row.productId} className={`hover:bg-slate-50 transition-colors ${hasLowStock ? 'bg-amber-50' : ''}`}>
+                      <td className="px-4 py-3 text-sm font-mono font-semibold text-slate-900">
+                        {row.code}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                        {row.brand}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-900">
+                        {row.name}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {row.category || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-slate-700">
+                        {row.finish}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-semibold text-slate-900">
+                        ${row.basePrice.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="space-y-2">
+                          {Array.from(sizeGroups.entries()).map(([colorName, colorVariants]) => (
+                            <div key={colorName} className="space-y-1">
+                              <div className="text-xs font-medium text-slate-600">{colorName}</div>
+                              <div className="flex flex-wrap gap-1">
+                                {colorVariants.map(variant => {
+                                  const stock = variant.inventory?.quantity || 0;
+                                  const minStock = variant.inventory?.min_stock || 0;
+                                  const isLowStock = stock <= minStock;
+                                  const isOutOfStock = stock === 0;
 
-                      return (
-                        <div key={colorId} className="border border-slate-200 rounded-lg p-4">
-                          <h4 className="text-sm font-semibold text-slate-700 mb-3">
-                            Color: {color?.name}
-                          </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                            {sortedVariants.map(variant => {
-                              const stock = variant.inventory?.quantity || 0;
-                              const minStock = variant.inventory?.min_stock || 0;
-                              const isLowStock = stock <= minStock;
-
-                              return (
-                                <div
-                                  key={variant.id}
-                                  className={`flex flex-col p-4 rounded-lg border-2 transition-all ${
-                                    isLowStock
-                                      ? 'bg-amber-50 border-amber-300'
-                                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-semibold text-slate-700">
-                                      Talla {variant.size?.name}
-                                    </span>
-                                    {isLowStock && (
-                                      <AlertTriangle className="w-4 h-4 text-amber-600" />
-                                    )}
-                                  </div>
-
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs text-slate-500">Stock:</span>
-                                    <span className={`text-lg font-bold ${
-                                      isLowStock ? 'text-amber-600' : 'text-green-600'
-                                    }`}>
-                                      {stock}
-                                    </span>
-                                  </div>
-
-                                  <div className="flex items-center justify-between mb-3">
-                                    <span className="text-xs text-slate-500">Mín:</span>
-                                    <span className="text-sm font-medium text-slate-600">{minStock}</span>
-                                  </div>
-
-                                  <div className="text-xs font-mono text-slate-400 mb-3 truncate" title={variant.sku}>
-                                    {variant.sku}
-                                  </div>
-
-                                  <div className="flex flex-col space-y-2 mt-auto">
+                                  return (
                                     <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openAdjustModal(variant);
-                                      }}
-                                      className="w-full px-3 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors"
+                                      key={variant.id}
+                                      onClick={() => openStockModal(variant)}
+                                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border-2 transition-all hover:scale-105 ${
+                                        isOutOfStock
+                                          ? 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200'
+                                          : isLowStock
+                                          ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                                          : 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200'
+                                      }`}
+                                      title={`${variant.size?.name} - Stock: ${stock} - Clic para ajustar`}
                                     >
-                                      Ajustar Stock
+                                      {variant.size?.name}
+                                      <span className="ml-1.5 font-bold">({stock})</span>
                                     </button>
-                                    <div className="flex space-x-2">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openLabelModal(variant);
-                                        }}
-                                        className="flex-1 p-2 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
-                                        title="Imprimir etiqueta"
-                                      >
-                                        <Printer className="w-3 h-3 mx-auto text-slate-600" />
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          openMovementsModal(variant);
-                                        }}
-                                        className="flex-1 p-2 bg-slate-100 hover:bg-slate-200 rounded transition-colors"
-                                        title="Ver historial"
-                                      >
-                                        <History className="w-3 h-3 mx-auto text-slate-600" />
-                                      </button>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      );
-                    })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
+                          totalStock === 0
+                            ? 'bg-red-100 text-red-800'
+                            : hasLowStock
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {totalStock}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
 
-      {showAdjustModal && selectedVariant && (
+      {showStockModal && selectedVariant && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">Ajustar Stock</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Ajustar Stock</h3>
+              <button
+                onClick={() => setShowStockModal(false)}
+                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
-              <p className="text-sm text-slate-600 mb-1">{selectedVariant.product?.name}</p>
-              <p className="text-sm font-medium text-slate-900 mb-2">{selectedVariant.sku}</p>
-              <p className="text-lg font-bold text-slate-900">
-                Stock Actual: {selectedVariant.inventory?.quantity || 0}
-              </p>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-600">Producto:</span>
+                <span className="text-sm font-semibold text-slate-900">
+                  {selectedVariant.product?.brand} - {selectedVariant.product?.name}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-600">Color:</span>
+                <span className="text-sm font-semibold text-slate-900">{selectedVariant.color?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-600">Talla:</span>
+                <span className="text-sm font-semibold text-slate-900">{selectedVariant.size?.name}</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-300 pt-2 mt-2">
+                <span className="text-sm text-slate-600">Stock Actual:</span>
+                <span className="text-lg font-bold text-slate-900">{selectedVariant.inventory?.quantity || 0}</span>
+              </div>
             </div>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Cantidad
+                  Nuevo Stock *
                 </label>
                 <input
                   type="number"
-                  value={adjustmentQty}
-                  onChange={(e) => setAdjustmentQty(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="Ingrese cantidad"
-                  min="1"
+                  min="0"
+                  value={newStock}
+                  onChange={(e) => setNewStock(e.target.value)}
+                  className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent text-lg font-semibold"
+                  placeholder="0"
+                  autoFocus
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Razón (Opcional)
+                  Razón del Ajuste (Opcional)
                 </label>
                 <textarea
                   value={adjustmentReason}
                   onChange={(e) => setAdjustmentReason(e.target.value)}
                   className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   rows={3}
-                  placeholder="ej. Mercancía dañada, Ajuste de inventario"
+                  placeholder="Ej: Reconteo físico, corrección de error, etc."
                 />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mt-6">
+            <div className="flex space-x-3 mt-6">
               <button
-                onClick={() => handleAdjustment('add')}
-                disabled={loading}
-                className="flex items-center justify-center space-x-2 px-4 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-50"
-              >
-                <Plus className="w-5 h-5" />
-                <span>Agregar</span>
-              </button>
-              <button
-                onClick={() => handleAdjustment('remove')}
-                disabled={loading}
-                className="flex items-center justify-center space-x-2 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
-              >
-                <Minus className="w-5 h-5" />
-                <span>Quitar</span>
-              </button>
-            </div>
-
-            <button
-              onClick={() => {
-                setShowAdjustModal(false);
-                setAdjustmentQty('');
-                setAdjustmentReason('');
-              }}
-              className="w-full mt-3 px-4 py-3 bg-slate-100 text-slate-900 rounded-lg font-semibold hover:bg-slate-200 transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showMovementsModal && selectedVariant && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full p-6 my-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900">Historial de Movimientos</h3>
-                <p className="text-sm text-slate-600">{selectedVariant.sku}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowMovementsModal(false);
-                  setMovements([]);
-                }}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="max-h-96 overflow-y-auto">
-              <table className="w-full">
-                <thead className="bg-slate-50 sticky top-0">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Fecha</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Tipo</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Cantidad</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Antes</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Después</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-700 uppercase">Razón</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {movements.map((movement) => (
-                    <tr key={movement.id}>
-                      <td className="px-4 py-3 text-sm text-slate-900">
-                        {new Date(movement.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                          movement.movement_type.includes('in') || movement.movement_type === 'return'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}>
-                          {movement.movement_type.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-900">
-                        {movement.quantity}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {movement.quantity_before}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {movement.quantity_after}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600">
-                        {movement.reason || '-'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showLabelModal && selectedVariant && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-slate-900">Etiqueta del Producto</h3>
-              <button
-                onClick={() => setShowLabelModal(false)}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                ×
-              </button>
-            </div>
-
-            <div id="printable-label" className="border-2 border-slate-300 rounded-lg p-6 bg-white mb-4">
-              <div className="label">
-                <div className="label-header text-center mb-2">
-                  <div className="text-lg font-bold">{selectedVariant.product?.brand}</div>
-                  <div className="text-sm">{selectedVariant.product?.name}</div>
-                </div>
-
-                <div className="space-y-1 text-sm mb-3">
-                  <div className="label-row flex justify-between">
-                    <span className="text-slate-600">Talla:</span>
-                    <span className="font-semibold">{selectedVariant.size?.name}</span>
-                  </div>
-                  <div className="label-row flex justify-between">
-                    <span className="text-slate-600">Color:</span>
-                    <span className="font-semibold">{selectedVariant.color?.name}</span>
-                  </div>
-                  <div className="label-row flex justify-between">
-                    <span className="text-slate-600">Material:</span>
-                    <span className="font-semibold">{selectedVariant.product?.finish}</span>
-                  </div>
-                </div>
-
-                <div className="label-barcode border-t border-b border-slate-200 py-3 mb-2">
-                  <div className="flex justify-center">
-                    {selectedVariant.barcode && selectedVariant.barcode.length > 0 ? (
-                      <Barcode
-                        value={selectedVariant.barcode}
-                        format="CODE128"
-                        width={1.5}
-                        height={60}
-                        displayValue={false}
-                      />
-                    ) : (
-                      <Barcode
-                        value={selectedVariant.sku}
-                        format="CODE128"
-                        width={1.5}
-                        height={60}
-                        displayValue={false}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div className="label-sku text-center">
-                  <div className="text-xs font-mono">{selectedVariant.sku}</div>
-                  <div className="text-xs text-slate-500 mt-1">${selectedVariant.price.toFixed(2)}</div>
-                </div>
-
-                <div className="flex justify-center mt-3">
-                  <QRCodeSVG value={selectedVariant.sku} size={60} />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowLabelModal(false)}
-                className="flex-1 px-4 py-3 bg-slate-100 text-slate-900 rounded-lg font-semibold hover:bg-slate-200 transition-colors"
+                onClick={() => setShowStockModal(false)}
+                className="flex-1 px-6 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
               >
                 Cancelar
               </button>
               <button
-                onClick={printLabel}
-                className="flex-1 px-4 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors flex items-center justify-center space-x-2"
+                onClick={updateStock}
+                disabled={updating}
+                className="flex-1 px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
               >
-                <Printer className="w-5 h-5" />
-                <span>Imprimir Etiqueta</span>
+                {updating ? 'Actualizando...' : 'Actualizar Stock'}
               </button>
             </div>
           </div>
