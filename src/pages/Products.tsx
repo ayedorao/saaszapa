@@ -3,7 +3,7 @@ import { collection, query, where, getDocs, addDoc, updateDoc, doc, writeBatch }
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product, ProductVariant, Size, Color, Inventory } from '../types/database';
-import { Plus, Search, Package, Eye, X, RefreshCw } from 'lucide-react';
+import { Plus, Search, Package, Eye, X, RefreshCw, Edit2, Trash2 } from 'lucide-react';
 import Barcode from 'react-barcode';
 import SeedDataButton from '../components/SeedDataButton';
 import { generateBarcode, validateBarcode } from '../utils/barcodeGenerator';
@@ -15,12 +15,20 @@ interface VariantWithDetails extends ProductVariant {
   inventory?: Inventory;
 }
 
+interface Store {
+  id: string;
+  name: string;
+  address: string;
+  active: boolean;
+}
+
 export default function Products() {
   const { user } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<VariantWithDetails[]>([]);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [colors, setColors] = useState<Color[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
@@ -59,9 +67,10 @@ export default function Products() {
 
     try {
       await Promise.all([
-        loadProducts(),
         loadSizesAndColors(),
+        loadStores(),
       ]);
+      await loadProducts();
     } catch (err) {
       console.error('Error loading data:', err);
       setError('Error al cargar los datos');
@@ -72,18 +81,22 @@ export default function Products() {
 
   async function loadProducts() {
     try {
-      const [productsSnap, variantsSnap, inventorySnap] = await Promise.all([
+      const [productsSnap, variantsSnap, inventorySnap, sizesSnap, colorsSnap] = await Promise.all([
         getDocs(collection(db, 'products')),
         getDocs(collection(db, 'product_variants')),
         getDocs(collection(db, 'inventory')),
+        getDocs(collection(db, 'sizes')),
+        getDocs(collection(db, 'colors')),
       ]);
 
       const productsData = productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Product[];
       const variantsData = variantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as ProductVariant[];
       const inventoryData = inventorySnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Inventory[];
+      const sizesData = sizesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Size[];
+      const colorsData = colorsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Color[];
 
-      const sizesMap = new Map(sizes.map(s => [s.id, s]));
-      const colorsMap = new Map(colors.map(c => [c.id, c]));
+      const sizesMap = new Map(sizesData.map(s => [s.id, s]));
+      const colorsMap = new Map(colorsData.map(c => [c.id, c]));
       const productsMap = new Map(productsData.map(p => [p.id, p]));
       const inventoryMap = new Map(inventoryData.map(i => [i.variant_id, i]));
 
@@ -117,6 +130,30 @@ export default function Products() {
       setColors(colorsData);
     } catch (error) {
       console.error('Error loading sizes and colors:', error);
+      throw error;
+    }
+  }
+
+  async function loadStores() {
+    try {
+      const storesQuery = query(collection(db, 'stores'), where('active', '==', true));
+      const storesSnapshot = await getDocs(storesQuery);
+      const storesData = storesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
+
+      if (storesData.length === 0) {
+        const mainStore = {
+          name: 'Tienda Principal',
+          address: '',
+          active: true,
+          created_at: new Date().toISOString(),
+        };
+        const mainStoreRef = await addDoc(collection(db, 'stores'), mainStore);
+        storesData.push({ id: mainStoreRef.id, ...mainStore });
+      }
+
+      setStores(storesData);
+    } catch (error) {
+      console.error('Error loading stores:', error);
       throw error;
     }
   }
@@ -163,6 +200,11 @@ export default function Products() {
       return;
     }
 
+    if (stores.length === 0) {
+      alert('No hay tiendas disponibles. Por favor, crea una tienda primero.');
+      return;
+    }
+
     setLoading(true);
     try {
       const productData: Omit<Product, 'id'> = {
@@ -184,6 +226,7 @@ export default function Products() {
       const productDocRef = await addDoc(collection(db, 'products'), productData);
       const productId = productDocRef.id;
 
+      const defaultStoreId = stores[0].id;
       const batch = writeBatch(db);
       let newVariantsCount = 0;
 
@@ -228,7 +271,7 @@ export default function Products() {
             variant_id: variantRef.id,
             quantity: stock,
             min_stock: 5,
-            store_id: 'main',
+            store_id: defaultStoreId,
             updated_at: new Date().toISOString(),
           });
 
@@ -276,6 +319,40 @@ export default function Products() {
     } catch (error) {
       console.error('Error updating product:', error);
       alert('Error al actualizar el producto');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteProduct(product: Product) {
+    if (!confirm(`¿Está seguro que desea eliminar el producto "${product.brand} - ${product.name}"?\n\nEsto eliminará el producto y todas sus variantes. Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const productVariants = variantsByProduct.get(product.id) || [];
+      const batch = writeBatch(db);
+
+      for (const variant of productVariants) {
+        if (variant.inventory?.id) {
+          batch.delete(doc(db, 'inventory', variant.inventory.id));
+        }
+        batch.delete(doc(db, 'product_variants', variant.id));
+      }
+
+      batch.update(doc(db, 'products', product.id), {
+        active: false,
+        updated_at: new Date().toISOString(),
+      });
+
+      await batch.commit();
+
+      alert('Producto eliminado exitosamente');
+      await loadAllData();
+    } catch (error) {
+      console.error('Error deleting product:', error);
+      alert('Error al eliminar el producto');
     } finally {
       setLoading(false);
     }
@@ -533,6 +610,29 @@ export default function Products() {
 
                 {isExpanded && (
                   <div className="p-6 border-t border-slate-200">
+                    <div className="flex justify-end space-x-3 mb-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openEditModal(product);
+                        }}
+                        className="inline-flex items-center px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium hover:bg-slate-200 transition-colors"
+                      >
+                        <Edit2 className="w-4 h-4 mr-2" />
+                        Editar Producto
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteProduct(product);
+                        }}
+                        className="inline-flex items-center px-4 py-2 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Eliminar Producto
+                      </button>
+                    </div>
+
                     {variantsByColor.size > 0 ? (
                       <div className="space-y-4">
                         {Array.from(variantsByColor.entries()).map(([colorId, colorVariants]) => {
