@@ -343,6 +343,21 @@ export default function Products() {
       });
 
       const existingVariants = variantsByProduct.get(selectedProduct.id) || [];
+
+      const inventoryQuery = query(
+        collection(db, 'inventory'),
+        where('store_id', '==', selectedStoreId)
+      );
+      const inventorySnap = await getDocs(inventoryQuery);
+      const existingInventoryByVariant = new Map<string, { id: string; quantity: number }>();
+      inventorySnap.docs.forEach(doc => {
+        const inv = doc.data() as Inventory;
+        existingInventoryByVariant.set(inv.variant_id, {
+          id: doc.id,
+          quantity: inv.quantity || 0,
+        });
+      });
+
       const batch = writeBatch(db);
 
       const currentKeys = new Set<string>();
@@ -359,9 +374,12 @@ export default function Products() {
             const newStock = variantStocks.get(variantKey);
 
             if (newStock !== undefined) {
-              if (existingVariant.inventory?.id && existingVariant.inventory.store_id === selectedStoreId) {
-                batch.update(doc(db, 'inventory', existingVariant.inventory.id), {
+              const existingStoreInventory = existingInventoryByVariant.get(existingVariant.id);
+
+              if (existingStoreInventory) {
+                batch.update(doc(db, 'inventory', existingStoreInventory.id), {
                   quantity: newStock,
+                  store_id: selectedStoreId,
                   updated_at: new Date().toISOString(),
                 });
               } else {
@@ -424,8 +442,9 @@ export default function Products() {
       existingVariants.forEach(variant => {
         const variantKey = `${variant.size_id}-${variant.color_id}`;
         if (!currentKeys.has(variantKey)) {
-          if (variant.inventory?.id) {
-            batch.delete(doc(db, 'inventory', variant.inventory.id));
+          const existingStoreInventory = existingInventoryByVariant.get(variant.id);
+          if (existingStoreInventory) {
+            batch.delete(doc(db, 'inventory', existingStoreInventory.id));
           }
           batch.delete(doc(db, 'product_variants', variant.id));
         }
