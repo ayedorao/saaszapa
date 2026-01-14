@@ -3,7 +3,9 @@ import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/fi
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { Camera, Save, Mail, Phone, User, Shield, Building, BookOpen } from 'lucide-react';
+import { Camera, Save, Mail, Phone, User, Shield, Building, BookOpen, FileText, AlertCircle } from 'lucide-react';
+import DocumentsSection from '../components/DocumentsSection';
+import IncidentReporter from '../components/IncidentReporter';
 
 export default function Profile() {
   const { user } = useAuth();
@@ -18,6 +20,7 @@ export default function Profile() {
     storeId: '',
   });
   const [photoURL, setPhotoURL] = useState<string>('');
+  const [showIncidentReporter, setShowIncidentReporter] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -388,22 +391,58 @@ export default function Profile() {
         </ul>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <h3 className="text-lg font-semibold text-slate-800 mb-3 flex items-center space-x-2">
-          <BookOpen className="w-5 h-5" />
-          <span>Tutorial del Sistema</span>
-        </h3>
-        <p className="text-slate-600 mb-4">
-          ¿Necesitas ayuda para usar el sistema? Reproduce el tutorial interactivo que te guiará paso a paso por todas las funcionalidades.
-        </p>
-        <button
-          onClick={() => window.dispatchEvent(new Event('showTutorial'))}
-          className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
-        >
-          <BookOpen className="w-5 h-5" />
-          <span>Ver Tutorial</span>
-        </button>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+            <BookOpen className="w-5 h-5" />
+            <span>Tutorial del Sistema</span>
+          </h3>
+          <p className="text-slate-600 mb-4">
+            ¿Necesitas ayuda para usar el sistema? Reproduce el tutorial interactivo que te guiará paso a paso por todas las funcionalidades.
+          </p>
+          <button
+            onClick={() => window.dispatchEvent(new Event('showTutorial'))}
+            className="w-full px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center justify-center space-x-2"
+          >
+            <BookOpen className="w-5 h-5" />
+            <span>Ver Tutorial</span>
+          </button>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <h3 className="text-lg font-semibold text-slate-800 mb-3 flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5" />
+            <span>Reportar Incidente</span>
+          </h3>
+          <p className="text-slate-600 mb-4">
+            ¿Encontraste un problema o error en el sistema? Repórtalo aquí para que podamos documentarlo y solucionarlo.
+          </p>
+          <button
+            onClick={() => setShowIncidentReporter(true)}
+            className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center space-x-2"
+          >
+            <AlertCircle className="w-5 h-5" />
+            <span>Reportar Incidente</span>
+          </button>
+        </div>
       </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+        <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center space-x-2">
+          <FileText className="w-5 h-5" />
+          <span>Documentación del Sistema</span>
+        </h3>
+        <DocumentsSection />
+      </div>
+
+      {showIncidentReporter && (
+        <IncidentReporter
+          onClose={() => setShowIncidentReporter(false)}
+          onSuccess={() => {
+            alert('Incidente reportado exitosamente');
+          }}
+        />
+      )}
     </div>
   );
 }

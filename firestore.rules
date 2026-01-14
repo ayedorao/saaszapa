@@ -187,5 +187,18 @@ service cloud.firestore {
       allow update: if isAuthenticated();
       allow delete: if false;
     }
+
+    match /document_access_attempts/{attemptId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if false;
+    }
+
+    match /system_incidents/{incidentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if false;
+    }
   }
 }

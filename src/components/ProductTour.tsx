@@ -118,7 +118,20 @@ const tourSteps: TourStep[] = [
     target: '[data-tour="profile"]',
     title: 'Tu Perfil',
     description: 'Accede a tu perfil personal. Actualiza tu información, foto y preferencias. También puedes reiniciar este tutorial cuando lo necesites.',
-    placement: 'right'
+    placement: 'right',
+    navigateTo: 'profile'
+  },
+  {
+    target: '[data-tour="profile"]',
+    title: 'Documentación del Sistema',
+    description: 'En tu perfil encontrarás acceso a la documentación completa del sistema, incluyendo términos y condiciones, avisos de privacidad, información sobre el manejo de datos y arquitectura del backend. Esta sección está protegida con código de acceso.',
+    placement: 'bottom'
+  },
+  {
+    target: '[data-tour="profile"]',
+    title: 'Reportar Incidentes',
+    description: 'Si encuentras algún error o problema en el sistema, puedes reportarlo desde tu perfil. Los incidentes se registran en el sistema para su seguimiento y resolución en Control de Sistema.',
+    placement: 'bottom'
   }
 ];
 

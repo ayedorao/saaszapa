@@ -3,7 +3,7 @@ import { collection, getDocs, addDoc, updateDoc, doc, orderBy, query } from 'fir
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar } from 'lucide-react';
+import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle } from 'lucide-react';
 
 interface Announcement {
   id: string;
@@ -17,12 +17,39 @@ interface Announcement {
   created_by: string;
 }
 
+interface AccessAttempt {
+  id: string;
+  user_email: string;
+  timestamp: string;
+  success: boolean;
+  user_id?: string;
+}
+
+interface Incident {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  category: string;
+  affected_module: string;
+  steps_to_reproduce: string;
+  status: 'open' | 'in_progress' | 'resolved' | 'closed';
+  reported_by: string;
+  reported_at: string;
+  resolved_at?: string;
+  resolution_notes?: string;
+}
+
 export default function SystemControl() {
   const { user } = useAuth();
   const { profile } = useUserRole();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [accessAttempts, setAccessAttempts] = useState<AccessAttempt[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'announcements' | 'attempts' | 'incidents'>('announcements');
+  const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [formData, setFormData] = useState({
     type: 'info' as 'info' | 'minor' | 'critical' | 'update',
     title: '',
@@ -32,8 +59,22 @@ export default function SystemControl() {
   });
 
   useEffect(() => {
-    loadAnnouncements();
+    loadAllData();
   }, []);
+
+  async function loadAllData() {
+    try {
+      await Promise.all([
+        loadAnnouncements(),
+        loadAccessAttempts(),
+        loadIncidents(),
+      ]);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function loadAnnouncements() {
     try {
@@ -46,8 +87,34 @@ export default function SystemControl() {
       setAnnouncements(data);
     } catch (error) {
       console.error('Error loading announcements:', error);
-    } finally {
-      setLoading(false);
+    }
+  }
+
+  async function loadAccessAttempts() {
+    try {
+      const q = query(collection(db, 'document_access_attempts'), orderBy('timestamp', 'desc'));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as AccessAttempt[];
+      setAccessAttempts(data);
+    } catch (error) {
+      console.error('Error loading access attempts:', error);
+    }
+  }
+
+  async function loadIncidents() {
+    try {
+      const q = query(collection(db, 'system_incidents'), orderBy('reported_at', 'desc'));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Incident[];
+      setIncidents(data);
+    } catch (error) {
+      console.error('Error loading incidents:', error);
     }
   }
 
@@ -105,6 +172,26 @@ export default function SystemControl() {
     }
   }
 
+  async function updateIncidentStatus(incident: Incident, newStatus: string) {
+    try {
+      const updateData: any = {
+        status: newStatus,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (newStatus === 'resolved' || newStatus === 'closed') {
+        updateData.resolved_at = new Date().toISOString();
+      }
+
+      await updateDoc(doc(db, 'system_incidents', incident.id), updateData);
+      loadIncidents();
+      alert('Estado del incidente actualizado');
+    } catch (error) {
+      console.error('Error updating incident:', error);
+      alert('Error al actualizar el incidente');
+    }
+  }
+
   function getTypeIcon(type: string) {
     switch (type) {
       case 'info':
@@ -140,6 +227,26 @@ export default function SystemControl() {
     return colors[type] || 'bg-slate-100 text-slate-800 border-slate-300';
   }
 
+  function getSeverityColor(severity: string) {
+    const colors: Record<string, string> = {
+      low: 'bg-green-100 text-green-800 border-green-300',
+      medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+      high: 'bg-orange-100 text-orange-800 border-orange-300',
+      critical: 'bg-red-100 text-red-800 border-red-300',
+    };
+    return colors[severity] || 'bg-slate-100 text-slate-800 border-slate-300';
+  }
+
+  function getStatusColor(status: string) {
+    const colors: Record<string, string> = {
+      open: 'bg-red-100 text-red-800 border-red-300',
+      in_progress: 'bg-blue-100 text-blue-800 border-blue-300',
+      resolved: 'bg-green-100 text-green-800 border-green-300',
+      closed: 'bg-slate-100 text-slate-800 border-slate-300',
+    };
+    return colors[status] || 'bg-slate-100 text-slate-800 border-slate-300';
+  }
+
   if (profile?.email !== 'crisdoraodxb@gmail.com') {
     return (
       <div className="flex items-center justify-center h-64">
@@ -165,72 +272,234 @@ export default function SystemControl() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Control de Sistema</h1>
-          <p className="text-slate-600 mt-1">Gestiona anuncios y alertas del sistema</p>
+          <p className="text-slate-600 mt-1">Gestiona anuncios, seguridad e incidentes del sistema</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>Nuevo Anuncio</span>
-        </button>
+        {activeTab === 'announcements' && (
+          <button
+            onClick={() => setShowModal(true)}
+            className="px-6 py-3 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-colors font-medium flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>Nuevo Anuncio</span>
+          </button>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {announcements.map(announcement => (
-          <div
-            key={announcement.id}
-            className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div className={`px-3 py-1 rounded-full text-sm font-medium border flex items-center space-x-2 ${getTypeColor(announcement.type)}`}>
-                {getTypeIcon(announcement.type)}
-                <span>{getTypeLabel(announcement.type)}</span>
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200">
+        <div className="border-b border-slate-200">
+          <nav className="flex space-x-8 px-6">
+            <button
+              onClick={() => setActiveTab('announcements')}
+              className={`py-4 border-b-2 font-medium transition-colors ${
+                activeTab === 'announcements'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Bell className="w-5 h-5" />
+                <span>Anuncios ({announcements.length})</span>
               </div>
-              <button
-                onClick={() => toggleAnnouncementStatus(announcement)}
-                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
-                  announcement.active
-                    ? 'bg-green-100 text-green-800 hover:bg-green-200'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                {announcement.active ? 'Activo' : 'Inactivo'}
-              </button>
-            </div>
-
-            <h3 className="text-lg font-bold text-slate-900 mb-2">{announcement.title}</h3>
-            <p className="text-slate-600 mb-4">{announcement.message}</p>
-
-            {(announcement.start_date || announcement.resolution_date) && (
-              <div className="space-y-2 text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
-                {announcement.start_date && (
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>Inicio: {new Date(announcement.start_date).toLocaleDateString('es-ES')}</span>
-                  </div>
-                )}
-                {announcement.resolution_date && (
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="w-4 h-4" />
-                    <span>Resolución: {new Date(announcement.resolution_date).toLocaleDateString('es-ES')}</span>
-                  </div>
-                )}
+            </button>
+            <button
+              onClick={() => setActiveTab('attempts')}
+              className={`py-4 border-b-2 font-medium transition-colors ${
+                activeTab === 'attempts'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Shield className="w-5 h-5" />
+                <span>Intentos de Acceso ({accessAttempts.length})</span>
               </div>
-            )}
+            </button>
+            <button
+              onClick={() => setActiveTab('incidents')}
+              className={`py-4 border-b-2 font-medium transition-colors ${
+                activeTab === 'incidents'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <FileText className="w-5 h-5" />
+                <span>Incidentes ({incidents.filter(i => i.status !== 'closed').length})</span>
+              </div>
+            </button>
+          </nav>
+        </div>
 
-            <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-500">
-              Creado por {announcement.created_by} el {new Date(announcement.created_at).toLocaleString('es-ES')}
+        <div className="p-6">
+          {activeTab === 'announcements' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {announcements.map(announcement => (
+                <div
+                  key={announcement.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`px-3 py-1 rounded-full text-sm font-medium border flex items-center space-x-2 ${getTypeColor(announcement.type)}`}>
+                      {getTypeIcon(announcement.type)}
+                      <span>{getTypeLabel(announcement.type)}</span>
+                    </div>
+                    <button
+                      onClick={() => toggleAnnouncementStatus(announcement)}
+                      className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                        announcement.active
+                          ? 'bg-green-100 text-green-800 hover:bg-green-200'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {announcement.active ? 'Activo' : 'Inactivo'}
+                    </button>
+                  </div>
+
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">{announcement.title}</h3>
+                  <p className="text-slate-600 mb-4">{announcement.message}</p>
+
+                  {(announcement.start_date || announcement.resolution_date) && (
+                    <div className="space-y-2 text-sm text-slate-600 bg-slate-50 rounded-lg p-3">
+                      {announcement.start_date && (
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>Inicio: {new Date(announcement.start_date).toLocaleDateString('es-ES')}</span>
+                        </div>
+                      )}
+                      {announcement.resolution_date && (
+                        <div className="flex items-center space-x-2">
+                          <Calendar className="w-4 h-4" />
+                          <span>Resolución: {new Date(announcement.resolution_date).toLocaleDateString('es-ES')}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-4 pt-4 border-t border-slate-200 text-xs text-slate-500">
+                    Creado por {announcement.created_by} el {new Date(announcement.created_at).toLocaleString('es-ES')}
+                  </div>
+                </div>
+              ))}
+
+              {announcements.length === 0 && (
+                <div className="col-span-2 text-center py-12">
+                  <Bell className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600">No hay anuncios en el sistema</p>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )}
 
-        {announcements.length === 0 && (
-          <div className="col-span-2 text-center py-12">
-            <Bell className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600">No hay anuncios en el sistema</p>
-          </div>
-        )}
+          {activeTab === 'attempts' && (
+            <div className="space-y-4">
+              {accessAttempts.map(attempt => (
+                <div
+                  key={attempt.id}
+                  className={`p-4 rounded-lg border-2 ${
+                    attempt.success
+                      ? 'bg-green-50 border-green-200'
+                      : 'bg-red-50 border-red-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-start space-x-3">
+                      {attempt.success ? (
+                        <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                      )}
+                      <div>
+                        <p className="font-medium text-slate-900">
+                          {attempt.success ? 'Acceso exitoso' : 'Intento fallido'}
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">
+                          Usuario: <span className="font-medium">{attempt.user_email}</span>
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {new Date(attempt.timestamp).toLocaleString('es-ES')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {accessAttempts.length === 0 && (
+                <div className="text-center py-12">
+                  <Shield className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600">No hay intentos de acceso registrados</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'incidents' && (
+            <div className="space-y-4">
+              {incidents.map(incident => (
+                <div
+                  key={incident.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-6"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium border ${getSeverityColor(incident.severity)}`}>
+                        {incident.severity.toUpperCase()}
+                      </div>
+                      <div className={`px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(incident.status)}`}>
+                        {incident.status.replace('_', ' ').toUpperCase()}
+                      </div>
+                    </div>
+                    <select
+                      value={incident.status}
+                      onChange={(e) => updateIncidentStatus(incident, e.target.value)}
+                      className="px-3 py-1 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    >
+                      <option value="open">Abierto</option>
+                      <option value="in_progress">En Progreso</option>
+                      <option value="resolved">Resuelto</option>
+                      <option value="closed">Cerrado</option>
+                    </select>
+                  </div>
+
+                  <h3 className="text-lg font-bold text-slate-900 mb-2">{incident.title}</h3>
+                  <p className="text-slate-600 mb-3">{incident.description}</p>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                      <p className="text-xs text-slate-500">Categoría</p>
+                      <p className="text-sm font-medium text-slate-900">{incident.category}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">Módulo Afectado</p>
+                      <p className="text-sm font-medium text-slate-900">{incident.affected_module || 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  {incident.steps_to_reproduce && (
+                    <div className="bg-slate-50 rounded-lg p-3 mb-4">
+                      <p className="text-xs font-medium text-slate-700 mb-1">Pasos para reproducir:</p>
+                      <p className="text-sm text-slate-600 whitespace-pre-wrap">{incident.steps_to_reproduce}</p>
+                    </div>
+                  )}
+
+                  <div className="pt-4 border-t border-slate-200 text-xs text-slate-500">
+                    Reportado por {incident.reported_by} el {new Date(incident.reported_at).toLocaleString('es-ES')}
+                    {incident.resolved_at && (
+                      <span className="ml-2">• Resuelto el {new Date(incident.resolved_at).toLocaleString('es-ES')}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {incidents.length === 0 && (
+                <div className="text-center py-12">
+                  <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600">No hay incidentes registrados</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {showModal && (
