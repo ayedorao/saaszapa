@@ -244,6 +244,7 @@ export default function Products() {
         image_url: formData.image_url,
         base_cost: parseFloat(formData.base_cost) || 0,
         base_price: parseFloat(formData.base_price) || 0,
+        store_id: selectedStoreId,
         active: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -339,6 +340,7 @@ export default function Products() {
         image_url: formData.image_url,
         base_cost: parseFloat(formData.base_cost) || 0,
         base_price: parseFloat(formData.base_price) || 0,
+        store_id: selectedStoreId,
         updated_at: new Date().toISOString(),
       });
 
@@ -359,6 +361,41 @@ export default function Products() {
       });
 
       const batch = writeBatch(db);
+
+      const oldStoreId = selectedProduct.store_id;
+      if (oldStoreId && oldStoreId !== selectedStoreId) {
+        existingVariants.forEach(variant => {
+          const allInventories = allInventoryByVariant.get(variant.id) || [];
+          const oldStoreInventory = allInventories.find(inv => inv.store_id === oldStoreId);
+          const newStoreInventory = allInventories.find(inv => inv.store_id === selectedStoreId);
+
+          if (oldStoreInventory && !newStoreInventory) {
+            batch.update(doc(db, 'inventory', oldStoreInventory.id), {
+              store_id: selectedStoreId,
+              updated_at: new Date().toISOString(),
+            });
+
+            const updatedInventories = allInventories.map(inv =>
+              inv.id === oldStoreInventory.id ? { ...inv, store_id: selectedStoreId } : inv
+            );
+            allInventoryByVariant.set(variant.id, updatedInventories);
+          } else if (oldStoreInventory && newStoreInventory) {
+            const totalQuantity = oldStoreInventory.quantity + newStoreInventory.quantity;
+            batch.update(doc(db, 'inventory', newStoreInventory.id), {
+              quantity: totalQuantity,
+              updated_at: new Date().toISOString(),
+            });
+            batch.delete(doc(db, 'inventory', oldStoreInventory.id));
+
+            const updatedInventories = allInventories
+              .filter(inv => inv.id !== oldStoreInventory.id)
+              .map(inv =>
+                inv.id === newStoreInventory.id ? { ...inv, quantity: totalQuantity } : inv
+              );
+            allInventoryByVariant.set(variant.id, updatedInventories);
+          }
+        });
+      }
 
       const currentKeys = new Set<string>();
       for (const sizeId of Array.from(selectedSizeIds)) {
@@ -569,9 +606,9 @@ export default function Products() {
       barcodes.set(key, variant.barcode || '');
     });
 
-    let storeIdToSelect = stores[0]?.id || '';
+    let storeIdToSelect = product.store_id || stores[0]?.id || '';
 
-    if (productVariants.length > 0) {
+    if (!product.store_id && productVariants.length > 0) {
       const variantIds = productVariants.map(v => v.id);
       const inventorySnap = await getDocs(collection(db, 'inventory'));
 
@@ -789,6 +826,11 @@ export default function Products() {
                       </div>
                       <p className="text-sm text-slate-600 mt-1">
                         {product.finish} | Código: {product.code} | ${product.base_price.toFixed(2)}
+                        {product.store_id && (
+                          <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                            {stores.find(s => s.id === product.store_id)?.name || 'Tienda'}
+                          </span>
+                        )}
                       </p>
                     </div>
 

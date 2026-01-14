@@ -60,6 +60,7 @@ export interface Product {
   image_url?: string;
   base_cost: number;
   base_price: number;
+  store_id?: string;
   active: boolean;
   created_at: string;
   updated_at: string;
