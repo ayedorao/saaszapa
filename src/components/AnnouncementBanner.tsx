@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Info, AlertTriangle, AlertOctagon, Bell, X, Calendar } from 'lucide-react';
 
@@ -20,24 +20,22 @@ export default function AnnouncementBanner() {
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
 
   useEffect(() => {
-    loadActiveAnnouncements();
     const dismissed = JSON.parse(localStorage.getItem('dismissedAnnouncements') || '[]');
     setDismissedIds(dismissed);
-  }, []);
 
-  async function loadActiveAnnouncements() {
-    try {
-      const q = query(collection(db, 'announces'), where('active', '==', true));
-      const snapshot = await getDocs(q);
+    const q = query(collection(db, 'announces'), where('active', '==', true));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Announcement[];
       setAnnouncements(data);
-    } catch (error) {
+    }, (error) => {
       console.error('Error loading announcements:', error);
-    }
-  }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   function handleDismiss(announcement: Announcement) {
     if (announcement.type === 'info' || announcement.type === 'update') {
