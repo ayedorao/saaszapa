@@ -307,3 +307,37 @@ export interface AuditLog {
   created_at: string;
   user?: Profile;
 }
+
+export interface ChatMessage {
+  id: string;
+  message: string;
+  image?: string;
+  sender_store_id: string;
+  sender_store_name: string;
+  sender_user_id: string;
+  sender_user_name: string;
+  created_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  conversation_id: string;
+  type: 'public' | 'private';
+  store_ids: string[];
+  store_names: string[];
+  messages: ChatMessage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Store {
+  id: string;
+  storeId: string;
+  name: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}

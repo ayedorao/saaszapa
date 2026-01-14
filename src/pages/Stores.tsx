@@ -6,6 +6,7 @@ import { Store, Plus, Edit2, MapPin, Phone, Mail, Building } from 'lucide-react'
 
 interface StoreData {
   id: string;
+  storeId: string;
   name: string;
   address?: string;
   phone?: string;
@@ -68,7 +69,9 @@ export default function Stores() {
         });
         alert('Tienda actualizada exitosamente');
       } else {
+        const storeId = `STORE-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
         await addDoc(collection(db, 'stores'), {
+          storeId,
           name: formData.name,
           address: formData.address || null,
           phone: formData.phone || null,

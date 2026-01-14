@@ -14,6 +14,8 @@ import Users from './pages/Users';
 import Profile from './pages/Profile';
 import Stores from './pages/Stores';
 import CashRegisters from './pages/CashRegisters';
+import Chat from './pages/Chat';
+import ChatAudit from './pages/ChatAudit';
 
 function App() {
   const { user, loading } = useAuth();
@@ -68,6 +70,10 @@ function App() {
         return <Stores />;
       case 'registers':
         return <CashRegisters />;
+      case 'chat':
+        return <Chat />;
+      case 'chat-audit':
+        return <ChatAudit />;
       case 'profile':
         return <Profile />;
       default:

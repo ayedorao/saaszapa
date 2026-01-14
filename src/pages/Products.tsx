@@ -312,7 +312,86 @@ export default function Products() {
         updated_at: new Date().toISOString(),
       });
 
-      alert('Producto actualizado exitosamente');
+      const existingVariants = variantsByProduct.get(selectedProduct.id) || [];
+      const batch = writeBatch(db);
+
+      const currentKeys = new Set<string>();
+      for (const sizeId of Array.from(selectedSizeIds)) {
+        for (const colorId of Array.from(selectedColorIds)) {
+          const variantKey = `${sizeId}-${colorId}`;
+          currentKeys.add(variantKey);
+
+          const existingVariant = existingVariants.find(
+            v => v.size_id === sizeId && v.color_id === colorId
+          );
+
+          if (existingVariant) {
+            const newStock = variantStocks.get(variantKey);
+            if (newStock !== undefined && existingVariant.inventory?.id) {
+              batch.update(doc(db, 'inventory', existingVariant.inventory.id), {
+                quantity: newStock,
+                updated_at: new Date().toISOString(),
+              });
+            }
+
+            const newBarcode = variantBarcodes.get(variantKey);
+            if (newBarcode && newBarcode !== existingVariant.barcode) {
+              batch.update(doc(db, 'product_variants', existingVariant.id), {
+                barcode: newBarcode,
+                updated_at: new Date().toISOString(),
+              });
+            }
+          } else {
+            const size = sizes.find(s => s.id === sizeId);
+            const color = colors.find(c => c.id === colorId);
+            const sku = `${formData.code}-${size?.name}-${color?.name}`.toUpperCase().replace(/\s+/g, '-');
+
+            const customBarcode = variantBarcodes.get(variantKey);
+            const barcode = customBarcode && customBarcode.length >= 10
+              ? customBarcode
+              : generateBarcode(formData.code, size?.name || '', color?.name || '');
+
+            const stock = variantStocks.get(variantKey) || 0;
+
+            const variantRef = doc(collection(db, 'product_variants'));
+            batch.set(variantRef, {
+              product_id: selectedProduct.id,
+              size_id: sizeId,
+              color_id: colorId,
+              sku,
+              barcode,
+              price: parseFloat(formData.base_price),
+              cost: parseFloat(formData.base_cost) || 0,
+              active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+
+            const inventoryRef = doc(collection(db, 'inventory'));
+            batch.set(inventoryRef, {
+              variant_id: variantRef.id,
+              quantity: stock,
+              min_stock: 5,
+              store_id: stores[0]?.id || 'main',
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      existingVariants.forEach(variant => {
+        const variantKey = `${variant.size_id}-${variant.color_id}`;
+        if (!currentKeys.has(variantKey)) {
+          if (variant.inventory?.id) {
+            batch.delete(doc(db, 'inventory', variant.inventory.id));
+          }
+          batch.delete(doc(db, 'product_variants', variant.id));
+        }
+      });
+
+      await batch.commit();
+
+      alert('Producto y variantes actualizados exitosamente');
       setShowModal(false);
       resetForm();
       await loadAllData();
@@ -408,6 +487,25 @@ export default function Products() {
       base_cost: product.base_cost.toString(),
       base_price: product.base_price.toString(),
     });
+
+    const productVariants = variantsByProduct.get(product.id) || [];
+    const selectedSizes = new Set<string>();
+    const selectedColors = new Set<string>();
+    const stocks = new Map<string, number>();
+    const barcodes = new Map<string, string>();
+
+    productVariants.forEach(variant => {
+      selectedSizes.add(variant.size_id);
+      selectedColors.add(variant.color_id);
+      const key = `${variant.size_id}-${variant.color_id}`;
+      stocks.set(key, variant.inventory?.quantity || 0);
+      barcodes.set(key, variant.barcode || '');
+    });
+
+    setSelectedSizeIds(selectedSizes);
+    setSelectedColorIds(selectedColors);
+    setVariantStocks(stocks);
+    setVariantBarcodes(barcodes);
     setShowModal(true);
   }
 
@@ -873,11 +971,16 @@ export default function Products() {
                 />
               </div>
 
-              {!selectedProduct && (
-                <>
-                  <div className="border-t border-slate-200 pt-4 mt-4">
-                    <h4 className="font-semibold text-slate-900 mb-3">Tallas y Colores *</h4>
-                    <div className="grid grid-cols-2 gap-4">
+              <div className="border-t border-slate-200 pt-4 mt-4">
+                <h4 className="font-semibold text-slate-900 mb-3">
+                  {selectedProduct ? 'Gestionar Variantes' : 'Tallas y Colores *'}
+                </h4>
+                {selectedProduct && (
+                  <p className="text-sm text-slate-600 mb-3">
+                    Selecciona o deselecciona tallas y colores para agregar o eliminar variantes
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-slate-700 mb-2">
                           Seleccionar Tallas
@@ -940,9 +1043,8 @@ export default function Products() {
                         </div>
                       </div>
                     </div>
-                  </div>
 
-                  {selectedSizeIds.size > 0 && selectedColorIds.size > 0 && (
+                {selectedSizeIds.size > 0 && selectedColorIds.size > 0 && (
                     <div className="border-t border-slate-200 pt-4 mt-4">
                       <h4 className="font-semibold text-slate-900 mb-3">Stock y Códigos de Barras</h4>
                       <div className="max-h-96 overflow-y-auto">
@@ -1002,8 +1104,7 @@ export default function Products() {
                       </div>
                     </div>
                   )}
-                </>
-              )}
+              </div>
 
               <div className="flex space-x-3 pt-4">
                 <button

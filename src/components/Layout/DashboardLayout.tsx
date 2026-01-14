@@ -18,6 +18,7 @@ import {
   UserCircle,
   Shield,
   Store,
+  MessageCircle,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -42,9 +43,11 @@ const navItems: NavItem[] = [
   { id: 'promotions', label: 'Promociones', icon: Tag, permission: 'sales' },
   { id: 'cash', label: 'Caja Registradora', icon: DollarSign, permission: 'cash_control' },
   { id: 'reports', label: 'Reportes', icon: BarChart3, permission: 'reports' },
+  { id: 'chat', label: 'Chat Tiendas', icon: MessageCircle },
   { id: 'users', label: 'Usuarios', icon: Shield, adminOnly: true },
   { id: 'stores', label: 'Tiendas', icon: Store, adminOnly: true },
   { id: 'registers', label: 'Cajas', icon: DollarSign, adminOnly: true },
+  { id: 'chat-audit', label: 'Auditoría Chat', icon: MessageCircle, adminOnly: true },
 ];
 
 export default function DashboardLayout({ children, currentPage }: DashboardLayoutProps) {
