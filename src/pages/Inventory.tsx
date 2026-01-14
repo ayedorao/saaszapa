@@ -101,16 +101,30 @@ export default function Inventory() {
         if (inventories.length > 0) {
           if (selectedStore === 'all') {
             const totalQty = inventories.reduce((sum, inv) => sum + (inv.quantity || 0), 0);
+            const minStockSum = inventories.reduce((sum, inv) => sum + (inv.min_stock || 0), 0);
             variant.inventory = {
               ...inventories[0],
               quantity: totalQty,
+              min_stock: minStockSum,
             };
           } else {
             const storeInventory = inventories.find(inv => inv.store_id === selectedStore);
-            variant.inventory = storeInventory || { quantity: 0, min_stock: 5 } as InventoryType;
+            if (storeInventory) {
+              variant.inventory = storeInventory;
+            } else {
+              variant.inventory = {
+                quantity: 0,
+                min_stock: 0,
+                store_id: selectedStore,
+              } as InventoryType;
+            }
           }
         } else {
-          variant.inventory = { quantity: 0, min_stock: 5 } as InventoryType;
+          variant.inventory = {
+            quantity: 0,
+            min_stock: 0,
+            store_id: selectedStore === 'all' ? '' : selectedStore,
+          } as InventoryType;
         }
 
         return variant;
@@ -189,7 +203,7 @@ export default function Inventory() {
         row.variants.some(v => {
           const stock = v.inventory?.quantity || 0;
           const minStock = v.inventory?.min_stock || 0;
-          return stock <= minStock;
+          return minStock > 0 && stock <= minStock;
         })
       );
     }
@@ -240,7 +254,7 @@ export default function Inventory() {
     return variants.filter(v => {
       const stock = v.inventory?.quantity || 0;
       const minStock = v.inventory?.min_stock || 0;
-      return stock <= minStock;
+      return minStock > 0 && stock <= minStock;
     }).length;
   }, [variants]);
 
@@ -273,28 +287,46 @@ export default function Inventory() {
     try {
       const currentQty = selectedVariant.inventory?.quantity || 0;
       const inventoryId = selectedVariant.inventory?.id;
+      const storeId = selectedVariant.inventory?.store_id || selectedStore;
 
       if (!inventoryId) {
-        alert('Registro de inventario no encontrado');
-        return;
+        const newInventoryRef = await addDoc(collection(db, 'inventory'), {
+          variant_id: selectedVariant.id,
+          store_id: storeId === 'all' ? stores[0]?.id : storeId,
+          quantity: qty,
+          min_stock: 5,
+          updated_at: new Date().toISOString(),
+        });
+
+        await addDoc(collection(db, 'inventory_movements'), {
+          variant_id: selectedVariant.id,
+          movement_type: 'adjustment_in',
+          quantity: qty,
+          quantity_before: 0,
+          quantity_after: qty,
+          reference_type: 'manual_adjustment',
+          reason: adjustmentReason || 'Inventario inicial para esta tienda',
+          created_by: user.uid,
+          created_at: new Date().toISOString(),
+        });
+      } else {
+        await updateDoc(doc(db, 'inventory', inventoryId), {
+          quantity: qty,
+          updated_at: new Date().toISOString(),
+        });
+
+        await addDoc(collection(db, 'inventory_movements'), {
+          variant_id: selectedVariant.id,
+          movement_type: qty > currentQty ? 'adjustment_in' : 'adjustment_out',
+          quantity: Math.abs(qty - currentQty),
+          quantity_before: currentQty,
+          quantity_after: qty,
+          reference_type: 'manual_adjustment',
+          reason: adjustmentReason || null,
+          created_by: user.uid,
+          created_at: new Date().toISOString(),
+        });
       }
-
-      await updateDoc(doc(db, 'inventory', inventoryId), {
-        quantity: qty,
-        updated_at: new Date().toISOString(),
-      });
-
-      await addDoc(collection(db, 'inventory_movements'), {
-        variant_id: selectedVariant.id,
-        movement_type: qty > currentQty ? 'adjustment_in' : 'adjustment_out',
-        quantity: Math.abs(qty - currentQty),
-        quantity_before: currentQty,
-        quantity_after: qty,
-        reference_type: 'manual_adjustment',
-        reason: adjustmentReason || null,
-        created_by: user.uid,
-        created_at: new Date().toISOString(),
-      });
 
       setShowStockModal(false);
       await loadData();
@@ -506,7 +538,7 @@ export default function Inventory() {
                   const hasLowStock = row.variants.some(v => {
                     const stock = v.inventory?.quantity || 0;
                     const minStock = v.inventory?.min_stock || 0;
-                    return stock <= minStock;
+                    return minStock > 0 && stock <= minStock;
                   });
                   const sizeGroups = getSizeGroups(row.variants);
 
@@ -539,8 +571,8 @@ export default function Inventory() {
                                 {colorVariants.map(variant => {
                                   const stock = variant.inventory?.quantity || 0;
                                   const minStock = variant.inventory?.min_stock || 0;
-                                  const isLowStock = stock <= minStock;
-                                  const isOutOfStock = stock === 0;
+                                  const isLowStock = minStock > 0 && stock <= minStock;
+                                  const isOutOfStock = minStock > 0 && stock === 0;
 
                                   return (
                                     <button
@@ -551,6 +583,8 @@ export default function Inventory() {
                                           ? 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200'
                                           : isLowStock
                                           ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                                          : stock === 0
+                                          ? 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
                                           : 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200'
                                       }`}
                                       title={`${variant.size?.name} - Stock: ${stock} - Clic para ajustar`}
@@ -567,10 +601,12 @@ export default function Inventory() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
-                          totalStock === 0
+                          hasLowStock && totalStock === 0
                             ? 'bg-red-100 text-red-800'
                             : hasLowStock
                             ? 'bg-amber-100 text-amber-800'
+                            : totalStock === 0
+                            ? 'bg-slate-100 text-slate-600'
                             : 'bg-green-100 text-green-800'
                         }`}>
                           {totalStock}
