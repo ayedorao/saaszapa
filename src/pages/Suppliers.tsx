@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Supplier, PurchaseInvoice, PurchaseInvoiceItem } from '../types/database';
 import SupplierInvoiceView from '../components/SupplierInvoiceView';
+import PurchaseInvoiceEditor from '../components/PurchaseInvoiceEditor';
 import {
   Plus,
   Search,
@@ -19,7 +20,8 @@ import {
   TrendingUp,
   Calendar,
   FileText,
-  Lock
+  Lock,
+  Edit
 } from 'lucide-react';
 
 interface SupplierWithPaymentInfo extends Supplier {
@@ -31,7 +33,7 @@ interface SupplierWithPaymentInfo extends Supplier {
   hasPendingPayment: boolean;
 }
 
-type View = 'list' | 'edit' | 'detail' | 'invoice';
+type View = 'list' | 'edit' | 'detail' | 'invoice' | 'editInvoice';
 
 export default function Suppliers() {
   const { user } = useAuth();
@@ -378,6 +380,19 @@ export default function Suppliers() {
     setCurrentView('invoice');
   }
 
+  function editInvoice(invoiceId: string) {
+    setSelectedInvoiceId(invoiceId);
+    setCurrentView('editInvoice');
+  }
+
+  function handleInvoiceEdited() {
+    loadSuppliers();
+    if (selectedSupplier) {
+      loadSupplierDetails(selectedSupplier.id);
+    }
+    setCurrentView('detail');
+  }
+
   function resetForm() {
     setFormData({
       code: '',
@@ -426,7 +441,15 @@ export default function Suppliers() {
         />
       )}
 
-      {currentView !== 'invoice' && (
+      {currentView === 'editInvoice' && selectedInvoiceId && (
+        <PurchaseInvoiceEditor
+          invoiceId={selectedInvoiceId}
+          onClose={backToList}
+          onConfirmed={handleInvoiceEdited}
+        />
+      )}
+
+      {currentView !== 'invoice' && currentView !== 'editInvoice' && (
         <>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -927,6 +950,13 @@ export default function Suppliers() {
                               >
                                 <FileText className="w-4 h-4 mr-2" />
                                 Ver Factura
+                              </button>
+                              <button
+                                onClick={() => editInvoice(invoice.id)}
+                                className="px-4 py-2 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 transition-colors font-medium inline-flex items-center justify-center"
+                              >
+                                <Edit className="w-4 h-4 mr-2" />
+                                Editar Factura
                               </button>
                               {(invoice as any).statusPago !== true && (
                                 <button

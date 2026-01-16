@@ -4,7 +4,8 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
 import { ProductVariant, Product, Size, Color, Inventory as InventoryType } from '../types/database';
-import { Search, Filter, ArrowUpDown, AlertTriangle, Package, RefreshCw, X } from 'lucide-react';
+import BulkLabelPrinter from '../components/BulkLabelPrinter';
+import { Search, Filter, ArrowUpDown, AlertTriangle, Package, RefreshCw, X, Printer, CheckSquare, Square } from 'lucide-react';
 
 interface VariantWithDetails extends ProductVariant {
   product?: Product;
@@ -52,6 +53,8 @@ export default function Inventory() {
   const [newStock, setNewStock] = useState('');
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const [updating, setUpdating] = useState(false);
+  const [selectedVariantsForLabels, setSelectedVariantsForLabels] = useState<Set<string>>(new Set());
+  const [showLabelPrinter, setShowLabelPrinter] = useState(false);
 
   useEffect(() => {
     if (profile && profile.storeId && !isAdmin) {
@@ -366,6 +369,48 @@ export default function Inventory() {
     }
   }
 
+  function toggleVariantSelection(variantId: string) {
+    setSelectedVariantsForLabels(prev => {
+      const next = new Set(prev);
+      if (next.has(variantId)) {
+        next.delete(variantId);
+      } else {
+        next.add(variantId);
+      }
+      return next;
+    });
+  }
+
+  function selectAllVariantsOfProduct(productVariants: VariantWithDetails[]) {
+    setSelectedVariantsForLabels(prev => {
+      const next = new Set(prev);
+      productVariants.forEach(v => next.add(v.id));
+      return next;
+    });
+  }
+
+  function deselectAllVariantsOfProduct(productVariants: VariantWithDetails[]) {
+    setSelectedVariantsForLabels(prev => {
+      const next = new Set(prev);
+      productVariants.forEach(v => next.delete(v.id));
+      return next;
+    });
+  }
+
+  function openLabelPrinter() {
+    const selected = variants.filter(v => selectedVariantsForLabels.has(v.id));
+    if (selected.length === 0) {
+      alert('Selecciona al menos una variante para imprimir etiquetas');
+      return;
+    }
+    setShowLabelPrinter(true);
+  }
+
+  function closeLabelPrinter() {
+    setShowLabelPrinter(false);
+    setSelectedVariantsForLabels(new Set());
+  }
+
   function getSizeGroups(variants: VariantWithDetails[]) {
     const groups = new Map<string, VariantWithDetails[]>();
     variants.forEach(v => {
@@ -491,6 +536,9 @@ export default function Inventory() {
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider w-12">
+                  Etiq.
+                </th>
                 <th
                   onClick={() => handleSort('code')}
                   className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider cursor-pointer hover:bg-slate-100 transition-colors"
@@ -556,7 +604,7 @@ export default function Inventory() {
             <tbody className="divide-y divide-slate-200">
               {filteredAndSortedRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                     <Package className="w-12 h-12 mx-auto mb-3 text-slate-300" />
                     <p>No se encontraron productos</p>
                   </td>
@@ -570,9 +618,32 @@ export default function Inventory() {
                     return minStock > 0 && stock <= minStock;
                   });
                   const sizeGroups = getSizeGroups(row.variants);
+                  const allSelected = row.variants.every(v => selectedVariantsForLabels.has(v.id));
+                  const someSelected = row.variants.some(v => selectedVariantsForLabels.has(v.id));
 
                   return (
                     <tr key={row.productId} className={`hover:bg-slate-50 transition-colors ${hasLowStock ? 'bg-amber-50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => {
+                            if (allSelected || someSelected) {
+                              deselectAllVariantsOfProduct(row.variants);
+                            } else {
+                              selectAllVariantsOfProduct(row.variants);
+                            }
+                          }}
+                          className="p-1 hover:bg-slate-100 rounded transition-colors"
+                          title={allSelected ? 'Deseleccionar todas' : 'Seleccionar todas las variantes'}
+                        >
+                          {allSelected ? (
+                            <CheckSquare className="w-5 h-5 text-slate-900" />
+                          ) : someSelected ? (
+                            <CheckSquare className="w-5 h-5 text-slate-400" />
+                          ) : (
+                            <Square className="w-5 h-5 text-slate-400" />
+                          )}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 text-sm font-mono font-semibold text-slate-900">
                         {row.code}
                       </td>
@@ -603,24 +674,38 @@ export default function Inventory() {
                                   const isLowStock = minStock > 0 && stock <= minStock;
                                   const isOutOfStock = minStock > 0 && stock === 0;
 
+                                  const isSelected = selectedVariantsForLabels.has(variant.id);
+
                                   return (
-                                    <button
-                                      key={variant.id}
-                                      onClick={() => openStockModal(variant)}
-                                      className={`px-3 py-1.5 text-xs font-semibold rounded-lg border-2 transition-all hover:scale-105 ${
-                                        isOutOfStock
-                                          ? 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200'
-                                          : isLowStock
-                                          ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
-                                          : stock === 0
-                                          ? 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
-                                          : 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200'
-                                      }`}
-                                      title={`${variant.size?.name} - Stock: ${stock} - Clic para ajustar`}
-                                    >
-                                      {variant.size?.name}
-                                      <span className="ml-1.5 font-bold">({stock})</span>
-                                    </button>
+                                    <div key={variant.id} className="relative inline-block">
+                                      <button
+                                        onClick={() => openStockModal(variant)}
+                                        className={`px-3 py-1.5 text-xs font-semibold rounded-lg border-2 transition-all hover:scale-105 ${
+                                          isOutOfStock
+                                            ? 'bg-red-100 border-red-300 text-red-800 hover:bg-red-200'
+                                            : isLowStock
+                                            ? 'bg-amber-100 border-amber-300 text-amber-800 hover:bg-amber-200'
+                                            : stock === 0
+                                            ? 'bg-slate-100 border-slate-300 text-slate-600 hover:bg-slate-200'
+                                            : 'bg-green-100 border-green-300 text-green-800 hover:bg-green-200'
+                                        }`}
+                                        title={`${variant.size?.name} - Stock: ${stock} - Clic para ajustar`}
+                                      >
+                                        {variant.size?.name}
+                                        <span className="ml-1.5 font-bold">({stock})</span>
+                                      </button>
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          toggleVariantSelection(variant.id);
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="absolute -top-1 -right-1 w-4 h-4 cursor-pointer"
+                                        title="Seleccionar para etiquetar"
+                                      />
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -731,6 +816,25 @@ export default function Inventory() {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedVariantsForLabels.size > 0 && (
+        <div className="fixed bottom-8 right-8 z-40">
+          <button
+            onClick={openLabelPrinter}
+            className="inline-flex items-center px-6 py-4 bg-slate-900 text-white rounded-full font-semibold hover:bg-slate-800 transition-all shadow-2xl hover:shadow-3xl hover:scale-105"
+          >
+            <Printer className="w-5 h-5 mr-2" />
+            Imprimir Etiquetas ({selectedVariantsForLabels.size})
+          </button>
+        </div>
+      )}
+
+      {showLabelPrinter && (
+        <BulkLabelPrinter
+          selectedVariants={variants.filter(v => selectedVariantsForLabels.has(v.id))}
+          onClose={closeLabelPrinter}
+        />
       )}
     </div>
   );
