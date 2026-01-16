@@ -129,45 +129,199 @@ export default function Sales() {
     }
   }
 
+  async function loadEnrichedSale(sale: Sale) {
+    const variantsSnap = await getDocs(collection(db, 'product_variants'));
+    const variantsMap = new Map(variantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(v => [v.id, v]));
+
+    const productsSnap = await getDocs(collection(db, 'products'));
+    const productsMap = new Map(productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(p => [p.id, p]));
+
+    const sizesSnap = await getDocs(collection(db, 'sizes'));
+    const sizesMap = new Map(sizesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(s => [s.id, s]));
+
+    const colorsSnap = await getDocs(collection(db, 'colors'));
+    const colorsMap = new Map(colorsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(c => [c.id, c]));
+
+    const enrichedItems = sale.items?.map(item => {
+      const variant = variantsMap.get(item.variant_id);
+      const product = variant ? productsMap.get(variant.product_id as any) : null;
+      const size = variant ? sizesMap.get(variant.size_id as any) : null;
+      const color = variant ? colorsMap.get(variant.color_id as any) : null;
+
+      return {
+        ...item,
+        variant: variant ? {
+          ...variant,
+          product,
+          size,
+          color
+        } : undefined
+      };
+    });
+
+    return {
+      ...sale,
+      items: enrichedItems
+    };
+  }
+
   async function handleViewInvoice(sale: Sale) {
     try {
-      const variantsSnap = await getDocs(collection(db, 'product_variants'));
-      const variantsMap = new Map(variantsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(v => [v.id, v]));
-
-      const productsSnap = await getDocs(collection(db, 'products'));
-      const productsMap = new Map(productsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(p => [p.id, p]));
-
-      const sizesSnap = await getDocs(collection(db, 'sizes'));
-      const sizesMap = new Map(sizesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(s => [s.id, s]));
-
-      const colorsSnap = await getDocs(collection(db, 'colors'));
-      const colorsMap = new Map(colorsSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })).map(c => [c.id, c]));
-
-      const enrichedItems = sale.items?.map(item => {
-        const variant = variantsMap.get(item.variant_id);
-        const product = variant ? productsMap.get(variant.product_id as any) : null;
-        const size = variant ? sizesMap.get(variant.size_id as any) : null;
-        const color = variant ? colorsMap.get(variant.color_id as any) : null;
-
-        return {
-          ...item,
-          variant: variant ? {
-            ...variant,
-            product,
-            size,
-            color
-          } : undefined
-        };
-      });
-
-      setSelectedSale({
-        ...sale,
-        items: enrichedItems
-      });
+      const enrichedSale = await loadEnrichedSale(sale);
+      setSelectedSale(enrichedSale);
       setViewingInvoice(true);
     } catch (error) {
       console.error('Error loading invoice data:', error);
       alert('Error al cargar los detalles de la factura');
+    }
+  }
+
+  async function handlePrintInvoice(sale: Sale) {
+    try {
+      const enrichedSale = await loadEnrichedSale(sale);
+
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        alert('Por favor habilita las ventanas emergentes para imprimir');
+        return;
+      }
+
+      const store = enrichedSale.store || stores[0];
+      const customerName = enrichedSale.customer
+        ? `${enrichedSale.customer.first_name} ${enrichedSale.customer.last_name}`
+        : enrichedSale.quick_customer?.name || 'Cliente General';
+
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>Factura ${enrichedSale.sale_number}</title>
+            <style>
+              * { margin: 0; padding: 0; box-sizing: border-box; }
+              body { font-family: Arial, sans-serif; padding: 1cm; }
+              .invoice-header { border-bottom: 2px solid #000; padding-bottom: 20px; margin-bottom: 20px; }
+              .invoice-header h1 { font-size: 24px; margin-bottom: 5px; }
+              .invoice-header p { font-size: 12px; color: #666; }
+              .invoice-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+              .invoice-number { background: #f0f0f0; padding: 10px; border-radius: 5px; text-align: right; }
+              .customer-info { margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px; }
+              .customer-info h3 { font-size: 14px; margin-bottom: 10px; }
+              table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+              th { background: #000; color: white; padding: 10px; text-align: left; font-size: 12px; }
+              td { padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px; }
+              .totals { display: flex; justify-content: flex-end; }
+              .totals-box { width: 300px; }
+              .totals-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #ddd; }
+              .totals-row.total { font-weight: bold; font-size: 16px; border-top: 2px solid #000; }
+              .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #666; }
+              @media print {
+                body { padding: 0; }
+                @page { margin: 1cm; size: letter; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="invoice-header">
+              <div style="display: flex; justify-content: space-between;">
+                <div>
+                  <h1>${store.name}</h1>
+                  ${store.legal_info?.business_name ? `<p><strong>${store.legal_info.business_name}</strong></p>` : ''}
+                  ${store.legal_info?.tax_id ? `<p>RFC: ${store.legal_info.tax_id}</p>` : ''}
+                  <p>${store.address}</p>
+                  ${store.phone ? `<p>Tel: ${store.phone}</p>` : ''}
+                  ${store.email ? `<p>${store.email}</p>` : ''}
+                </div>
+                <div class="invoice-number">
+                  <p style="font-size: 10px; color: #666;">No. Venta</p>
+                  <p style="font-size: 16px; font-weight: bold;">${enrichedSale.sale_number}</p>
+                  <p style="font-size: 10px; margin-top: 5px;">${new Date(enrichedSale.created_at).toLocaleDateString('es-MX')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="customer-info">
+              <h3>Cliente</h3>
+              <p><strong>${customerName}</strong></p>
+              ${enrichedSale.customer?.email || enrichedSale.quick_customer?.email ? `<p>${enrichedSale.customer?.email || enrichedSale.quick_customer?.email}</p>` : ''}
+            </div>
+
+            <table>
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th style="text-align: center;">Cantidad</th>
+                  <th style="text-align: right;">Precio Unit.</th>
+                  <th style="text-align: right;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${enrichedSale.items?.map(item => {
+                  const product = item.variant?.product;
+                  const size = item.variant?.size;
+                  const color = item.variant?.color;
+                  const productName = product ? `${product.brand} ${product.name}` : 'Producto';
+                  const variant = size && color ? `${size.name} - ${color.name}` : '';
+
+                  return `
+                    <tr>
+                      <td>
+                        <strong>${productName}</strong>
+                        ${variant ? `<br><span style="font-size: 10px; color: #666;">${variant}</span>` : ''}
+                      </td>
+                      <td style="text-align: center;">${item.quantity}</td>
+                      <td style="text-align: right;">$${item.unit_price.toFixed(2)}</td>
+                      <td style="text-align: right;">$${item.subtotal.toFixed(2)}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+
+            <div class="totals">
+              <div class="totals-box">
+                <div class="totals-row">
+                  <span>Subtotal:</span>
+                  <span>$${enrichedSale.subtotal.toFixed(2)}</span>
+                </div>
+                ${enrichedSale.discount_amount > 0 ? `
+                  <div class="totals-row">
+                    <span>Descuento:</span>
+                    <span style="color: red;">-$${enrichedSale.discount_amount.toFixed(2)}</span>
+                  </div>
+                ` : ''}
+                ${enrichedSale.tax_amount > 0 ? `
+                  <div class="totals-row">
+                    <span>IVA (16%):</span>
+                    <span>$${enrichedSale.tax_amount.toFixed(2)}</span>
+                  </div>
+                ` : ''}
+                <div class="totals-row total">
+                  <span>TOTAL:</span>
+                  <span>$${enrichedSale.total.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="footer">
+              <p>Gracias por su compra</p>
+              <p>Generado el ${new Date().toLocaleDateString('es-MX')} a las ${new Date().toLocaleTimeString('es-MX')}</p>
+            </div>
+
+            <script>
+              window.onload = function() {
+                window.print();
+                setTimeout(function() { window.close(); }, 100);
+              };
+            </script>
+          </body>
+        </html>
+      `);
+
+      printWindow.document.close();
+    } catch (error) {
+      console.error('Error printing invoice:', error);
+      alert('Error al imprimir la factura');
     }
   }
 
@@ -378,10 +532,7 @@ export default function Sales() {
                             <Eye className="w-5 h-5" />
                           </button>
                           <button
-                            onClick={() => {
-                              handleViewInvoice(sale);
-                              setTimeout(() => window.print(), 500);
-                            }}
+                            onClick={() => handlePrintInvoice(sale)}
                             className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                             title="Imprimir"
                           >
