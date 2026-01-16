@@ -41,11 +41,209 @@ export default function BulkLabelPrinter({ selectedVariants, onClose }: BulkLabe
   }
 
   function handlePrint() {
-    window.print();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Por favor permite las ventanas emergentes para imprimir');
+      return;
+    }
+
+    const labelsHTML = labelQuantities.flatMap(({ variant, quantity }) =>
+      Array.from({ length: quantity }, (_, i) => {
+        const barcode = variant.barcode || variant.sku;
+        const productName = variant.product?.name || '';
+        const brand = variant.product?.brand || '';
+        const size = variant.size?.name || '';
+        const color = variant.color?.name || '';
+        const price = variant.price;
+        const sku = variant.sku;
+
+        if (labelType === 'barcode') {
+          return `
+            <div class="barcode-label" style="width: 384px; min-height: 192px; padding: 8px; background-color: white; border: 1px solid #000; font-family: monospace; font-size: 10px; line-height: 1.2; page-break-after: always; page-break-inside: avoid;">
+              <div style="font-size: 11px; font-weight: bold; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                ${brand.toUpperCase()} - ${productName.toUpperCase()}
+              </div>
+              <div style="text-align: center; margin: 4px 0;">
+                <svg id="barcode-${barcode}-${i}"></svg>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px; font-size: 9px;">
+                <div><strong>Talla:</strong> ${size}</div>
+                <div><strong>Color:</strong> ${color}</div>
+              </div>
+              <div style="font-size: 14px; font-weight: bold; margin-top: 4px; text-align: center;">
+                $${price.toFixed(2)}
+              </div>
+              <div style="font-size: 8px; margin-top: 2px; text-align: center; color: #666;">
+                SKU: ${sku}
+              </div>
+            </div>
+          `;
+        } else if (labelType === 'professional') {
+          return `
+            <div class="label-container" style="background: white; border: 2px solid #cbd5e1; border-radius: 8px; padding: 16px; width: 100%; page-break-after: always; page-break-inside: avoid;">
+              <div style="text-align: center;">
+                <div style="border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 8px;">
+                  <h3 style="font-size: 16px; font-weight: bold; color: #1e293b; margin: 0;">Mi Tienda</h3>
+                </div>
+                <div style="padding: 8px 0;">
+                  <p style="font-size: 12px; color: #64748b; margin: 0;">${brand}</p>
+                  <p style="font-size: 14px; font-weight: bold; color: #1e293b; line-height: 1.2; margin: 4px 0;">${productName}</p>
+                </div>
+                <div style="display: flex; justify-content: center; align-items: center; gap: 16px; padding: 4px 0;">
+                  <div style="text-align: center;">
+                    <p style="font-size: 12px; color: #64748b; margin: 0;">Talla</p>
+                    <p style="font-size: 16px; font-weight: bold; color: #1e293b; margin: 4px 0;">${size}</p>
+                  </div>
+                  <div style="width: 1px; height: 40px; background: #cbd5e1;"></div>
+                  <div style="text-align: center;">
+                    <p style="font-size: 12px; color: #64748b; margin: 0;">Color</p>
+                    <p style="font-size: 12px; font-weight: 600; color: #334155; margin: 4px 0;">${color}</p>
+                  </div>
+                </div>
+                <div style="border-top: 2px solid #e2e8f0; padding-top: 8px; margin-top: 8px;">
+                  <p style="font-size: 12px; color: #64748b; margin: 0;">Precio</p>
+                  <p style="font-size: 20px; font-weight: bold; color: #16a34a; margin: 4px 0;">$${price.toFixed(2)}</p>
+                  <p style="font-size: 12px; color: #94a3b8; margin: 0;">MXN</p>
+                </div>
+                <div style="text-align: center; padding: 8px 0;">
+                  <svg id="barcode-${barcode}-${i}"></svg>
+                </div>
+                <div style="font-size: 9px; color: #94a3b8; font-family: monospace; margin: 0;">
+                  SKU: ${sku}
+                </div>
+              </div>
+            </div>
+          `;
+        } else {
+          return `
+            <div style="width: 100%; background: white; border: 4px solid black; padding: 12px; font-family: Arial, sans-serif; page-break-after: always; page-break-inside: avoid;">
+              <div style="text-align: center; border-bottom: 2px solid black; padding-bottom: 4px; margin-bottom: 8px;">
+                <p style="font-size: 16px; font-weight: bold; margin: 0;">Mi Tienda</p>
+              </div>
+              <div>
+                <h2 style="font-size: 14px; font-weight: bold; margin: 4px 0; text-transform: uppercase;">
+                  ${productName}
+                </h2>
+                <p style="font-size: 12px; color: #666; margin: 2px 0;">
+                  ${brand}
+                </p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 8px 0; padding: 6px; background: #f5f5f5; border: 1px solid #ddd; font-size: 10px;">
+                  <div>
+                    <span style="font-weight: bold; color: #333;">TALLA:</span>
+                    <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">
+                      ${size}
+                    </div>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold; color: #333;">COLOR:</span>
+                    <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">
+                      ${color}
+                    </div>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold; color: #333;">ACABADO:</span>
+                    <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">
+                      ${variant.product?.finish || '-'}
+                    </div>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold; color: #333;">GÉNERO:</span>
+                    <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">
+                      ${variant.product?.gender || '-'}
+                    </div>
+                  </div>
+                </div>
+                <div style="text-align: center; margin: 8px 0;">
+                  <svg id="barcode-${barcode}-${i}"></svg>
+                </div>
+              </div>
+              <div style="text-align: center; border-top: 2px solid black; padding-top: 4px; margin-top: 8px;">
+                <p style="font-size: 28px; font-weight: bold; margin: 0;">
+                  $${price.toFixed(2)}
+                </p>
+                <p style="font-size: 9px; color: #666; margin-top: 2px;">
+                  SKU: ${sku}
+                </p>
+              </div>
+            </div>
+          `;
+        }
+      })
+    ).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Imprimir Etiquetas</title>
+          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+          <style>
+            @page {
+              size: auto;
+              margin: 0.5cm;
+            }
+
+            body {
+              margin: 0;
+              padding: 0;
+              background: white;
+              font-family: Arial, sans-serif;
+            }
+
+            .container {
+              display: grid;
+              grid-template-columns: repeat(2, 1fr);
+              gap: 8px;
+              padding: 8px;
+            }
+
+            @media print {
+              body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            ${labelsHTML}
+          </div>
+          <script>
+            window.onload = function() {
+              ${labelQuantities.flatMap(({ variant, quantity }) =>
+                Array.from({ length: quantity }, (_, i) => {
+                  const barcode = variant.barcode || variant.sku;
+                  return `
+                    try {
+                      JsBarcode("#barcode-${barcode}-${i}", "${barcode}", {
+                        format: "CODE128",
+                        width: 1.5,
+                        height: 50,
+                        displayValue: true,
+                        fontSize: 11,
+                        margin: 5
+                      });
+                    } catch(e) { console.error(e); }
+                  `;
+                })
+              ).join('\n')}
+
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
   }
 
   function handleDownloadPDF() {
-    window.print();
+    handlePrint();
   }
 
   const totalLabels = labelQuantities.reduce((sum, lq) => sum + lq.quantity, 0);
