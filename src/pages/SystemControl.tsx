@@ -5,6 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
 import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle, Database, Trash2, Lock, Activity, LogIn } from 'lucide-react';
 import { cleanupDuplicateInventory } from '../utils/cleanupInventory';
+import { clearDatabase } from '../utils/clearDatabase';
+import { logAction } from '../utils/logAction';
 
 interface Announcement {
   id: string;
@@ -77,6 +79,9 @@ export default function SystemControl() {
   const [showClearLogsModal, setShowClearLogsModal] = useState(false);
   const [clearLogsPassword, setClearLogsPassword] = useState('');
   const [clearingLogs, setClearingLogs] = useState(false);
+  const [showClearDatabaseModal, setShowClearDatabaseModal] = useState(false);
+  const [clearDatabasePassword, setClearDatabasePassword] = useState('');
+  const [clearingDatabase, setClearingDatabase] = useState(false);
   const [formData, setFormData] = useState({
     type: 'info' as 'info' | 'minor' | 'critical' | 'update',
     title: '',
@@ -168,6 +173,42 @@ export default function SystemControl() {
       alert('Error al eliminar registros');
     } finally {
       setClearingLogs(false);
+    }
+  }
+
+  async function handleClearDatabase() {
+    if (clearDatabasePassword !== '140126') {
+      alert('Contraseña incorrecta');
+      return;
+    }
+
+    if (!confirm('⚠️ ADVERTENCIA CRÍTICA ⚠️\n\nEsta acción eliminará PERMANENTEMENTE todos los datos del sistema excepto:\n- Usuarios\n- Tiendas\n- Cajas\n- Chat\n- Logs del sistema\n\n¿Estás ABSOLUTAMENTE seguro de que deseas continuar?')) {
+      return;
+    }
+
+    setClearingDatabase(true);
+    try {
+      const result = await clearDatabase();
+
+      await logAction(
+        user?.uid || '',
+        user?.email || '',
+        'LIMPIEZA_BASE_DATOS',
+        'Sistema',
+        `Base de datos limpiada: ${result.totalDeleted} documentos eliminados en ${result.collectionsCleared} colecciones`,
+        result
+      );
+
+      await loadAllData();
+
+      alert(`✅ Base de datos limpiada exitosamente\n\n${result.totalDeleted} documentos eliminados\n${result.collectionsCleared} colecciones procesadas`);
+      setShowClearDatabaseModal(false);
+      setClearDatabasePassword('');
+    } catch (error) {
+      console.error('Error limpiando base de datos:', error);
+      alert('Error al limpiar la base de datos. Revisa la consola para más detalles.');
+    } finally {
+      setClearingDatabase(false);
     }
   }
 
@@ -395,6 +436,15 @@ export default function SystemControl() {
           >
             <Database className="w-5 h-5" />
             <span>{cleaningInventory ? 'Limpiando...' : 'Limpiar Inventario'}</span>
+          </button>
+          <button
+            onClick={() => setShowClearDatabaseModal(true)}
+            disabled={clearingDatabase}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center space-x-2 disabled:opacity-50"
+            title="Limpiar base de datos completa (excepto usuarios, tiendas, cajas, chat, logs)"
+          >
+            <Trash2 className="w-5 h-5" />
+            <span>{clearingDatabase ? 'Limpiando...' : 'Limpiar Base de Datos'}</span>
           </button>
           {activeTab === 'announcements' && (
             <button
@@ -917,6 +967,104 @@ export default function SystemControl() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showClearDatabaseModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center">
+                <Database className="w-12 h-12 text-red-600" />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-red-800 mb-4 text-center">ADVERTENCIA CRÍTICA</h3>
+            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
+              <p className="text-red-800 font-semibold mb-3 text-center">Esta acción eliminará PERMANENTEMENTE:</p>
+              <ul className="space-y-2 text-red-700 text-sm">
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODOS los productos y variantes</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODO el inventario</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODAS las ventas y devoluciones</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODOS los clientes</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODAS las facturas y pagos</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODOS los anuncios e incidentes</span>
+                </li>
+              </ul>
+              <div className="mt-3 pt-3 border-t border-red-300">
+                <p className="text-red-800 font-bold text-sm">SE CONSERVARÁN:</p>
+                <ul className="space-y-1 text-red-700 text-sm mt-2">
+                  <li className="flex items-start space-x-2">
+                    <span className="font-bold">✓</span>
+                    <span>Usuarios y perfiles</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="font-bold">✓</span>
+                    <span>Tiendas y cajas</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="font-bold">✓</span>
+                    <span>Chat</span>
+                  </li>
+                  <li className="flex items-start space-x-2">
+                    <span className="font-bold">✓</span>
+                    <span>Logs del sistema</span>
+                  </li>
+                </ul>
+              </div>
+              <p className="text-red-900 font-bold text-center mt-3 text-sm bg-red-200 py-2 px-3 rounded">
+                ⚠️ NO SE PUEDE DESHACER ⚠️
+              </p>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                <Lock className="w-4 h-4 inline mr-2" />
+                Ingresa la contraseña de administrador:
+              </label>
+              <input
+                type="password"
+                value={clearDatabasePassword}
+                onChange={(e) => setClearDatabasePassword(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="••••••"
+              />
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowClearDatabaseModal(false);
+                  setClearDatabasePassword('');
+                }}
+                disabled={clearingDatabase}
+                className="flex-1 px-4 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleClearDatabase}
+                disabled={clearingDatabase || !clearDatabasePassword}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {clearingDatabase ? 'Limpiando...' : 'Limpiar Base de Datos'}
+              </button>
+            </div>
           </div>
         </div>
       )}
