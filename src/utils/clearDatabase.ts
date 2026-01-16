@@ -37,23 +37,29 @@ export async function clearDatabase() {
         continue;
       }
 
-      const batch = writeBatch(db);
+      let batch = writeBatch(db);
       let batchCount = 0;
+      let collectionTotal = 0;
 
-      snapshot.docs.forEach(docSnap => {
+      for (const docSnap of snapshot.docs) {
         batch.delete(docSnap.ref);
         batchCount++;
+        collectionTotal++;
 
         if (batchCount >= 500) {
-          console.log(`  - Procesando batch de ${batchCount} documentos`);
+          await batch.commit();
+          console.log(`  - Procesando batch: ${collectionTotal} documentos eliminados hasta ahora`);
+          batch = writeBatch(db);
+          batchCount = 0;
         }
-      });
+      }
 
       if (batchCount > 0) {
         await batch.commit();
-        totalDeleted += batchCount;
-        console.log(`  - ${collectionName}: ${batchCount} documentos eliminados`);
       }
+
+      totalDeleted += collectionTotal;
+      console.log(`  - ${collectionName}: ${collectionTotal} documentos eliminados`);
     }
 
     console.log(`✅ Limpieza completada: ${totalDeleted} documentos eliminados en total`);

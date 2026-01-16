@@ -38,17 +38,26 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /product_variants/{variantId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /variants/{variantId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /inventory/{inventoryId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /inventory_movements/{movementId} {
@@ -78,17 +87,20 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /sales/{saleId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /sale_items/{itemId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /payments/{paymentId} {
@@ -98,12 +110,14 @@ service cloud.firestore {
 
     match /returns/{returnId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /return_items/{itemId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /exchanges/{exchangeId} {
@@ -118,12 +132,20 @@ service cloud.firestore {
 
     match /promotions/{promotionId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /promotion_products/{promoProductId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /promotions_products/{promoProductId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /stores/{storeId} {
@@ -143,17 +165,20 @@ service cloud.firestore {
 
     match /announces/{announceId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /document_access_attempts/{attemptId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /system_incidents/{incidentId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /suppliers/{supplierId} {
@@ -163,12 +188,32 @@ service cloud.firestore {
 
     match /purchase_invoices/{invoiceId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /purchase_invoice_items/{itemId} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /supplier_invoices/{invoiceId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /supplier_invoice_items/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /supplier_payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
     }
 
     match /action_logs/{logId} {
