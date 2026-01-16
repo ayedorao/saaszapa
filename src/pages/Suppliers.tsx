@@ -34,17 +34,17 @@ interface SupplierWithPaymentInfo extends Supplier {
   hasPendingPayment: boolean;
 }
 
+type View = 'list' | 'edit' | 'detail' | 'invoice';
+
 export default function Suppliers() {
   const { user } = useAuth();
   const [suppliers, setSuppliers] = useState<SupplierWithPaymentInfo[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const [currentView, setCurrentView] = useState<View>('list');
   const [selectedSupplier, setSelectedSupplier] = useState<SupplierWithPaymentInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
-  const [showDetailModal, setShowDetailModal] = useState(false);
   const [supplierInvoices, setSupplierInvoices] = useState<PurchaseInvoice[]>([]);
-  const [showInvoiceView, setShowInvoiceView] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
@@ -218,13 +218,13 @@ export default function Suppliers() {
     }
   }
 
-  function openDetailModal(supplier: SupplierWithPaymentInfo) {
+  function openDetailView(supplier: SupplierWithPaymentInfo) {
     setSelectedSupplier(supplier);
     loadSupplierDetails(supplier.id);
-    setShowDetailModal(true);
+    setCurrentView('detail');
   }
 
-  function openEditModal(supplier?: SupplierWithPaymentInfo) {
+  function openEditView(supplier?: SupplierWithPaymentInfo) {
     if (supplier) {
       setSelectedSupplier(supplier);
       const supplierData = supplier as any;
@@ -247,7 +247,14 @@ export default function Suppliers() {
       setSelectedSupplier(null);
       resetForm();
     }
-    setShowModal(true);
+    setCurrentView('edit');
+  }
+
+  function backToList() {
+    setCurrentView('list');
+    setSelectedSupplier(null);
+    setSelectedInvoiceId(null);
+    resetForm();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -277,7 +284,7 @@ export default function Suppliers() {
         });
         alert('Proveedor creado exitosamente');
       }
-      setShowModal(false);
+      setCurrentView('list');
       resetForm();
       await loadSuppliers();
     } catch (error) {
@@ -371,7 +378,7 @@ export default function Suppliers() {
 
   function viewInvoice(invoiceId: string) {
     setSelectedInvoiceId(invoiceId);
-    setShowInvoiceView(true);
+    setCurrentView('invoice');
   }
 
   async function runDebugInfo() {
@@ -440,84 +447,114 @@ export default function Suppliers() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900">Proveedores</h1>
-          <p className="text-slate-600 mt-1">Gestión de proveedores y pagos pendientes</p>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={runDebugInfo}
-            className="inline-flex items-center px-4 py-2 bg-blue-100 border-2 border-blue-300 text-blue-700 rounded-lg font-semibold hover:bg-blue-200 transition-colors"
-            title="Ver información de debug en consola"
-          >
-            <Bug className="w-5 h-5 mr-2" />
-            Debug
-          </button>
-          <button
-            onClick={runFixInvoices}
-            disabled={loading}
-            className="inline-flex items-center px-4 py-2 bg-orange-100 border-2 border-orange-300 text-orange-700 rounded-lg font-semibold hover:bg-orange-200 transition-colors disabled:opacity-50"
-            title="Corregir facturas con estados incorrectos"
-          >
-            <Wrench className="w-5 h-5 mr-2" />
-            Corregir
-          </button>
-          <button
-            onClick={loadSuppliers}
-            disabled={dataLoading}
-            className="inline-flex items-center px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-5 h-5 mr-2 ${dataLoading ? 'animate-spin' : ''}`} />
-            Actualizar
-          </button>
-          <button
-            onClick={() => openEditModal()}
-            className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors shadow-lg hover:shadow-xl"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Nuevo Proveedor
-          </button>
-        </div>
-      </div>
-
-      {suppliersWithPending > 0 && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
-          <div className="flex items-start space-x-4">
-            <div className="bg-red-100 p-3 rounded-lg">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
-            </div>
-            <div className="flex-1">
-              <h3 className="text-lg font-bold text-red-900 mb-1">Pagos Pendientes</h3>
-              <p className="text-red-700 mb-3">
-                Hay {suppliersWithPending} {suppliersWithPending === 1 ? 'proveedor' : 'proveedores'} con pagos pendientes
-              </p>
-              <div className="flex items-center space-x-2">
-                <DollarSign className="w-5 h-5 text-red-700" />
-                <span className="text-2xl font-bold text-red-900">
-                  ${totalPendingPayments.toFixed(2)}
-                </span>
-                <span className="text-red-700">total pendiente</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      {currentView === 'invoice' && selectedInvoiceId && (
+        <SupplierInvoiceView
+          invoiceId={selectedInvoiceId}
+          onClose={backToList}
+        />
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Buscar proveedores por nombre, código o contacto..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-          />
-        </div>
-      </div>
+      {currentView !== 'invoice' && (
+        <>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              {currentView !== 'list' && (
+                <button
+                  onClick={backToList}
+                  className="inline-flex items-center px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
+                >
+                  <X className="w-5 h-5 mr-2" />
+                  Volver
+                </button>
+              )}
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">
+                  {currentView === 'list' ? 'Proveedores' : currentView === 'edit' ? (selectedSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor') : 'Detalles del Proveedor'}
+                </h1>
+                <p className="text-slate-600 mt-1">
+                  {currentView === 'list' ? 'Gestión de proveedores y pagos pendientes' : ''}
+                </p>
+              </div>
+            </div>
+            {currentView === 'list' && (
+              <div className="flex items-center space-x-3">
+                <button
+                  onClick={runDebugInfo}
+                  className="inline-flex items-center px-4 py-2 bg-blue-100 border-2 border-blue-300 text-blue-700 rounded-lg font-semibold hover:bg-blue-200 transition-colors"
+                  title="Ver información de debug en consola"
+                >
+                  <Bug className="w-5 h-5 mr-2" />
+                  Debug
+                </button>
+                <button
+                  onClick={runFixInvoices}
+                  disabled={loading}
+                  className="inline-flex items-center px-4 py-2 bg-orange-100 border-2 border-orange-300 text-orange-700 rounded-lg font-semibold hover:bg-orange-200 transition-colors disabled:opacity-50"
+                  title="Corregir facturas con estados incorrectos"
+                >
+                  <Wrench className="w-5 h-5 mr-2" />
+                  Corregir
+                </button>
+                <button
+                  onClick={loadSuppliers}
+                  disabled={dataLoading}
+                  className="inline-flex items-center px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-semibold hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-5 h-5 mr-2 ${dataLoading ? 'animate-spin' : ''}`} />
+                  Actualizar
+                </button>
+                <button
+                  onClick={() => openEditView()}
+                  className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors shadow-lg hover:shadow-xl"
+                >
+                  <Plus className="w-5 h-5 mr-2" />
+                  Nuevo Proveedor
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
-      {filteredSuppliers.length > 0 ? (
+      {currentView === 'list' && (
+        <>
+          {suppliersWithPending > 0 && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl p-6">
+              <div className="flex items-start space-x-4">
+                <div className="bg-red-100 p-3 rounded-lg">
+                  <AlertTriangle className="w-8 h-8 text-red-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-red-900 mb-1">Pagos Pendientes</h3>
+                  <p className="text-red-700 mb-3">
+                    Hay {suppliersWithPending} {suppliersWithPending === 1 ? 'proveedor' : 'proveedores'} con pagos pendientes
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <DollarSign className="w-5 h-5 text-red-700" />
+                    <span className="text-2xl font-bold text-red-900">
+                      ${totalPendingPayments.toFixed(2)}
+                    </span>
+                    <span className="text-red-700">total pendiente</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder="Buscar proveedores por nombre, código o contacto..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+              />
+            </div>
+          </div>
+
+          {filteredSuppliers.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredSuppliers.map(supplier => (
             <div
@@ -597,13 +634,13 @@ export default function Suppliers() {
 
               <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between space-x-2">
                 <button
-                  onClick={() => openDetailModal(supplier)}
+                  onClick={() => openDetailView(supplier)}
                   className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm"
                 >
                   Ver Detalles
                 </button>
                 <button
-                  onClick={() => openEditModal(supplier)}
+                  onClick={() => openEditView(supplier)}
                   className="p-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors"
                 >
                   <Edit2 className="w-4 h-4" />
@@ -624,7 +661,7 @@ export default function Suppliers() {
           <h3 className="text-lg font-semibold text-slate-900 mb-2">No hay proveedores</h3>
           <p className="text-slate-600 mb-4">Comienza agregando tu primer proveedor</p>
           <button
-            onClick={() => openEditModal()}
+            onClick={() => openEditView()}
             className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors"
           >
             <Plus className="w-5 h-5 mr-2" />
@@ -632,26 +669,12 @@ export default function Suppliers() {
           </button>
         </div>
       )}
+        </>
+      )}
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full my-8">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-900">
-                {selectedSupplier ? 'Editar Proveedor' : 'Nuevo Proveedor'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  resetForm();
-                }}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      {currentView === 'edit' && (
+        <div className="bg-white rounded-xl shadow-lg border border-slate-300">
+          <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -838,10 +861,7 @@ export default function Suppliers() {
               <div className="flex space-x-3 pt-4">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowModal(false);
-                    resetForm();
-                  }}
+                  onClick={backToList}
                   className="flex-1 px-6 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
                 >
                   Cancelar
@@ -855,25 +875,11 @@ export default function Suppliers() {
                 </button>
               </div>
             </form>
-          </div>
         </div>
       )}
 
-      {showDetailModal && selectedSupplier && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-slate-200 sticky top-0 bg-white z-10">
-              <div>
-                <h2 className="text-2xl font-bold text-slate-900">{selectedSupplier.name}</h2>
-                <p className="text-sm text-slate-600">Código: {selectedSupplier.code}</p>
-              </div>
-              <button
-                onClick={() => setShowDetailModal(false)}
-                className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+      {currentView === 'detail' && selectedSupplier && (
+        <div className="bg-white rounded-xl shadow-lg border border-slate-300">
 
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-3 gap-4">
@@ -990,18 +996,7 @@ export default function Suppliers() {
                 )}
               </div>
             </div>
-          </div>
         </div>
-      )}
-
-      {showInvoiceView && selectedInvoiceId && (
-        <SupplierInvoiceView
-          invoiceId={selectedInvoiceId}
-          onClose={() => {
-            setShowInvoiceView(false);
-            setSelectedInvoiceId(null);
-          }}
-        />
       )}
     </div>
   );
