@@ -42,6 +42,7 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
   ]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [isPaid, setIsPaid] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -318,18 +319,26 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
         null;
 
       console.log('Factura con supplier_id principal:', primarySupplierId);
+      console.log('Estado de pago:', isPaid ? 'Pagado' : 'Pendiente');
 
-      batch.set(invoiceRef, {
+      const invoiceData: any = {
         invoice_number: invoiceNumber,
         supplier_id: primarySupplierId,
-        status: 'draft',
+        status: isPaid ? 'confirmed' : 'draft',
         subtotal: invoiceSubtotal,
         tax_amount: taxAmount,
         total: total,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         created_by: user.uid,
-      });
+      };
+
+      if (isPaid) {
+        invoiceData.confirmed_at = new Date().toISOString();
+        invoiceData.confirmed_by = user.uid;
+      }
+
+      batch.set(invoiceRef, invoiceData);
 
       for (const item of invoiceItems) {
         const itemRef = doc(collection(db, 'purchase_invoice_items'));
@@ -577,25 +586,49 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
           </button>
         </div>
 
-        <div className="flex items-center justify-between p-6 border-t border-slate-200 bg-slate-50">
-          <p className="text-sm text-slate-600">
-            {rows.length} {rows.length === 1 ? 'producto' : 'productos'} en la lista
-          </p>
-          <div className="flex space-x-3">
-            <button
-              onClick={onClose}
-              className="px-6 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
-            >
-              <Save className="w-5 h-5 mr-2" />
-              {loading ? 'Guardando...' : 'Guardar y Generar Factura'}
-            </button>
+        <div className="p-6 border-t border-slate-200 bg-slate-50 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <p className="text-sm text-slate-600">
+                {rows.length} {rows.length === 1 ? 'producto' : 'productos'} en la lista
+              </p>
+              <div className="h-6 w-px bg-slate-300"></div>
+              <label className="flex items-center space-x-3 cursor-pointer">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    checked={isPaid}
+                    onChange={(e) => setIsPaid(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-14 h-7 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-600"></div>
+                </div>
+                <div className="flex flex-col">
+                  <span className={`text-sm font-semibold ${isPaid ? 'text-green-700' : 'text-slate-700'}`}>
+                    {isPaid ? 'ENTRADA PAGADA' : 'PAGO PENDIENTE'}
+                  </span>
+                  <span className="text-xs text-slate-500">
+                    {isPaid ? 'Productos pagados al proveedor' : 'Deuda pendiente con el proveedor'}
+                  </span>
+                </div>
+              </label>
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={onClose}
+                className="px-6 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
+              >
+                <Save className="w-5 h-5 mr-2" />
+                {loading ? 'Guardando...' : 'Guardar y Generar Factura'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

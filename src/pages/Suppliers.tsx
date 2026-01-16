@@ -170,8 +170,7 @@ export default function Suppliers() {
       const invoicesSnap = await getDocs(
         query(
           collection(db, 'purchase_invoices'),
-          where('supplier_id', '==', supplierId),
-          orderBy('created_at', 'desc')
+          where('supplier_id', '==', supplierId)
         )
       );
 
@@ -180,7 +179,12 @@ export default function Suppliers() {
         ...doc.data()
       })) as PurchaseInvoice[];
 
-      setSupplierInvoices(invoices);
+      const sortedInvoices = invoices.sort((a, b) => {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+
+      console.log(`Facturas del proveedor ${supplierId}:`, sortedInvoices);
+      setSupplierInvoices(sortedInvoices);
     } catch (error) {
       console.error('Error loading supplier details:', error);
     }
