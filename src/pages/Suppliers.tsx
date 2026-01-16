@@ -3,6 +3,7 @@ import { collection, getDocs, addDoc, updateDoc, doc, query, where, orderBy } fr
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Supplier, PurchaseInvoice, PurchaseInvoiceItem } from '../types/database';
+import SupplierInvoiceView from '../components/SupplierInvoiceView';
 import {
   Plus,
   Search,
@@ -16,7 +17,8 @@ import {
   Package,
   RefreshCw,
   TrendingUp,
-  Calendar
+  Calendar,
+  FileText
 } from 'lucide-react';
 
 interface SupplierWithPaymentInfo extends Supplier {
@@ -38,6 +40,8 @@ export default function Suppliers() {
   const [dataLoading, setDataLoading] = useState(true);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [supplierInvoices, setSupplierInvoices] = useState<PurchaseInvoice[]>([]);
+  const [showInvoiceView, setShowInvoiceView] = useState(false);
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     code: '',
@@ -48,6 +52,11 @@ export default function Suppliers() {
     address: '',
     tax_id: '',
     notes: '',
+    company_name: '',
+    payment_terms: '',
+    bank_account: '',
+    bank_name: '',
+    account_notes: '',
   });
 
   useEffect(() => {
@@ -106,11 +115,11 @@ export default function Suppliers() {
         const supplierInvoices = invoicesBySupplier.get(supplier.id) || [];
         const supplierItems = itemsBySupplier.get(supplier.id) || [];
 
-        const confirmedInvoices = supplierInvoices.filter(inv => inv.status === 'confirmed');
-        const draftInvoices = supplierInvoices.filter(inv => inv.status === 'draft');
+        const paidInvoices = supplierInvoices.filter(inv => inv.status === 'confirmed');
+        const unpaidInvoices = supplierInvoices.filter(inv => inv.status === 'draft');
 
-        const totalPaid = confirmedInvoices.reduce((sum, inv) => sum + inv.total, 0);
-        const pendingPayment = draftInvoices.reduce((sum, inv) => sum + inv.total, 0);
+        const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.total, 0);
+        const pendingPayment = unpaidInvoices.reduce((sum, inv) => sum + inv.total, 0);
         const totalOwed = totalPaid + pendingPayment;
 
         const dates = supplierInvoices.map(inv => new Date(inv.created_at));
@@ -121,9 +130,10 @@ export default function Suppliers() {
         console.log(`Proveedor ${supplier.name}:`, {
           facturas: supplierInvoices.length,
           items: supplierItems.length,
-          totalPaid,
-          pendingPayment,
-          totalOwed
+          totalPaid: totalPaid,
+          pendingPayment: pendingPayment,
+          totalOwed: totalOwed,
+          hasPendingPayment: pendingPayment > 0
         });
 
         return {
@@ -182,6 +192,7 @@ export default function Suppliers() {
   function openEditModal(supplier?: SupplierWithPaymentInfo) {
     if (supplier) {
       setSelectedSupplier(supplier);
+      const supplierData = supplier as any;
       setFormData({
         code: supplier.code,
         name: supplier.name,
@@ -191,6 +202,11 @@ export default function Suppliers() {
         address: supplier.address || '',
         tax_id: supplier.tax_id || '',
         notes: supplier.notes || '',
+        company_name: supplierData.company_name || '',
+        payment_terms: supplierData.payment_terms || '',
+        bank_account: supplierData.bank_account || '',
+        bank_name: supplierData.bank_name || '',
+        account_notes: supplierData.account_notes || '',
       });
     } else {
       setSelectedSupplier(null);
@@ -261,6 +277,10 @@ export default function Suppliers() {
   async function markInvoiceAsPaid(invoiceId: string) {
     if (!user) return;
 
+    if (!confirm('¿Confirmar que se realizó el pago de esta factura?')) {
+      return;
+    }
+
     try {
       await updateDoc(doc(db, 'purchase_invoices', invoiceId), {
         status: 'confirmed',
@@ -280,6 +300,11 @@ export default function Suppliers() {
     }
   }
 
+  function viewInvoice(invoiceId: string) {
+    setSelectedInvoiceId(invoiceId);
+    setShowInvoiceView(true);
+  }
+
   function resetForm() {
     setFormData({
       code: '',
@@ -290,6 +315,11 @@ export default function Suppliers() {
       address: '',
       tax_id: '',
       notes: '',
+      company_name: '',
+      payment_terms: '',
+      bank_account: '',
+      bank_name: '',
+      account_notes: '',
     });
     setSelectedSupplier(null);
   }
@@ -595,27 +625,100 @@ export default function Suppliers() {
                 />
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  RFC / Tax ID
-                </label>
-                <input
-                  type="text"
-                  value={formData.tax_id}
-                  onChange={(e) => setFormData({ ...formData, tax_id: e.target.value.toUpperCase() })}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
-                  placeholder="RFC123456789"
-                />
+              <div className="border-t border-slate-200 pt-4 mt-4">
+                <h3 className="text-lg font-semibold text-slate-900 mb-4">Información Fiscal y Contable</h3>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Razón Social
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.company_name}
+                      onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      placeholder="Razón Social Completa"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      RFC / Tax ID
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.tax_id}
+                      onChange={(e) => setFormData({ ...formData, tax_id: e.target.value.toUpperCase() })}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      placeholder="RFC123456789"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Banco
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.bank_name}
+                      onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      placeholder="Nombre del banco"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      Cuenta Bancaria
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.bank_account}
+                      onChange={(e) => setFormData({ ...formData, bank_account: e.target.value })}
+                      className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                      placeholder="Número de cuenta o CLABE"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Términos de Pago
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.payment_terms}
+                    onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Ej: 30 días, Contado, 15-30-45 días, etc."
+                  />
+                </div>
+
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Notas Contables
+                  </label>
+                  <textarea
+                    value={formData.account_notes}
+                    onChange={(e) => setFormData({ ...formData, account_notes: e.target.value })}
+                    rows={2}
+                    className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                    placeholder="Información importante para contabilidad..."
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Notas
+                  Notas Generales
                 </label>
                 <textarea
                   value={formData.notes}
                   onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  rows={3}
+                  rows={2}
                   className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
                   placeholder="Notas adicionales..."
                 />
@@ -733,7 +836,7 @@ export default function Suppliers() {
                                   ? 'bg-green-200 text-green-800'
                                   : 'bg-slate-200 text-slate-800'
                               }`}>
-                                {invoice.status === 'draft' ? 'Pendiente' : invoice.status === 'confirmed' ? 'Pagado' : 'Cancelado'}
+                                {invoice.status === 'draft' ? 'Pendiente de Pago' : invoice.status === 'confirmed' ? 'Pagado' : 'Cancelado'}
                               </span>
                             </div>
                             <p className="text-sm text-slate-600">
@@ -746,17 +849,26 @@ export default function Suppliers() {
                             )}
                           </div>
                           <div className="text-right">
-                            <div className="text-2xl font-bold text-slate-900 mb-1">
+                            <div className="text-2xl font-bold text-slate-900 mb-2">
                               ${invoice.total.toFixed(2)}
                             </div>
-                            {invoice.status === 'draft' && (
+                            <div className="flex flex-col space-y-2">
                               <button
-                                onClick={() => markInvoiceAsPaid(invoice.id)}
-                                className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium"
+                                onClick={() => viewInvoice(invoice.id)}
+                                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-medium inline-flex items-center justify-center"
                               >
-                                Marcar como Pagado
+                                <FileText className="w-4 h-4 mr-2" />
+                                Ver Factura
                               </button>
-                            )}
+                              {invoice.status === 'draft' && (
+                                <button
+                                  onClick={() => markInvoiceAsPaid(invoice.id)}
+                                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium"
+                                >
+                                  Marcar como Pagado
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -772,6 +884,16 @@ export default function Suppliers() {
             </div>
           </div>
         </div>
+      )}
+
+      {showInvoiceView && selectedInvoiceId && (
+        <SupplierInvoiceView
+          invoiceId={selectedInvoiceId}
+          onClose={() => {
+            setShowInvoiceView(false);
+            setSelectedInvoiceId(null);
+          }}
+        />
       )}
     </div>
   );
