@@ -4,6 +4,7 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Supplier, PurchaseInvoice, PurchaseInvoiceItem } from '../types/database';
 import SupplierInvoiceView from '../components/SupplierInvoiceView';
+import { fixSupplierInvoices, showSuppliersDebugInfo } from '../utils/fixSupplierInvoices';
 import {
   Plus,
   Search,
@@ -18,7 +19,9 @@ import {
   RefreshCw,
   TrendingUp,
   Calendar,
-  FileText
+  FileText,
+  Bug,
+  Wrench
 } from 'lucide-react';
 
 interface SupplierWithPaymentInfo extends Supplier {
@@ -305,6 +308,31 @@ export default function Suppliers() {
     setShowInvoiceView(true);
   }
 
+  async function runDebugInfo() {
+    console.clear();
+    console.log('🔍 Ejecutando información de debug...\n');
+    await showSuppliersDebugInfo();
+    alert('Información de debug mostrada en la consola del navegador (F12)');
+  }
+
+  async function runFixInvoices() {
+    if (!confirm('¿Deseas corregir las facturas con estados incorrectos?\n\nEsto cambiará todas las facturas sin fecha de pago a estado "draft" (pendiente de pago).')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const result = await fixSupplierInvoices();
+      await loadSuppliers();
+      alert(`Corrección completada:\n\n✅ Facturas correctas: ${result.alreadyCorrect}\n🔧 Facturas corregidas: ${result.corrected}\n📋 Total: ${result.total}\n\nRevisa la consola para más detalles.`);
+    } catch (error) {
+      console.error('Error al corregir facturas:', error);
+      alert('Error al corregir facturas. Revisa la consola.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function resetForm() {
     setFormData({
       code: '',
@@ -352,6 +380,23 @@ export default function Suppliers() {
           <p className="text-slate-600 mt-1">Gestión de proveedores y pagos pendientes</p>
         </div>
         <div className="flex items-center space-x-3">
+          <button
+            onClick={runDebugInfo}
+            className="inline-flex items-center px-4 py-2 bg-blue-100 border-2 border-blue-300 text-blue-700 rounded-lg font-semibold hover:bg-blue-200 transition-colors"
+            title="Ver información de debug en consola"
+          >
+            <Bug className="w-5 h-5 mr-2" />
+            Debug
+          </button>
+          <button
+            onClick={runFixInvoices}
+            disabled={loading}
+            className="inline-flex items-center px-4 py-2 bg-orange-100 border-2 border-orange-300 text-orange-700 rounded-lg font-semibold hover:bg-orange-200 transition-colors disabled:opacity-50"
+            title="Corregir facturas con estados incorrectos"
+          >
+            <Wrench className="w-5 h-5 mr-2" />
+            Corregir
+          </button>
           <button
             onClick={loadSuppliers}
             disabled={dataLoading}
