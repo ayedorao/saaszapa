@@ -160,11 +160,18 @@ export interface Customer {
   created_by?: string;
 }
 
+export interface QuickCustomer {
+  name: string;
+  email: string;
+}
+
 export interface Sale {
   id: string;
   sale_number: string;
   session_id?: string;
   customer_id?: string;
+  quick_customer?: QuickCustomer; // For walk-in customers
+  store_id?: string;
   user_id: string;
   status: SaleStatus;
   subtotal: number;
@@ -177,11 +184,14 @@ export interface Sale {
   void_reason?: string;
   created_at: string;
   completed_at?: string;
+  invoice_sent?: boolean;
+  invoice_sent_at?: string;
   session?: CashSession;
   customer?: Customer;
   user?: Profile;
   items?: SaleItem[];
   payments?: Payment[];
+  store?: Store;
 }
 
 export interface SaleItem {
@@ -332,6 +342,19 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface StoreLegalInfo {
+  business_name?: string;
+  tax_id?: string; // RFC
+  business_registration?: string;
+  legal_address?: string;
+  legal_representative?: string;
+  permits_licenses?: string;
+  return_policy?: string;
+  warranty_policy?: string;
+  terms_conditions?: string;
+  website?: string;
+}
+
 export interface Store {
   id: string;
   storeId: string;
@@ -342,6 +365,7 @@ export interface Store {
   active: boolean;
   created_at: string;
   updated_at: string;
+  legal_info?: StoreLegalInfo;
 }
 
 export interface Supplier {
