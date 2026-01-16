@@ -25,6 +25,7 @@ import {
   MessageCircle,
   Bell,
   Truck,
+  FileText,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -42,6 +43,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: 'pos', label: 'Punto de Venta', icon: ShoppingCart, permission: 'sales' },
+  { id: 'sales', label: 'Ventas', icon: FileText, permission: 'sales' },
   { id: 'products', label: 'Productos', icon: ShoppingBag, permission: 'products' },
   { id: 'inventory', label: 'Inventario', icon: Boxes, permission: 'inventory' },
   { id: 'customers', label: 'Clientes', icon: Users, permission: 'customers' },
