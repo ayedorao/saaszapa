@@ -228,6 +228,7 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
           base_cost: parseFloat(row.base_cost),
           base_price: parseFloat(row.base_price),
           store_id: storeId,
+          statusPago: isPaid,
           active: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -319,24 +320,30 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
         null;
 
       console.log('Factura con supplier_id principal:', primarySupplierId);
-      console.log('Estado de pago:', isPaid ? 'Pagado' : 'Pendiente');
+      console.log('Estado del toggle isPaid:', isPaid);
+      console.log('Estado de pago que se guardará:', isPaid ? 'Pagado (confirmed)' : 'Pendiente (draft)');
 
       const invoiceData: any = {
         invoice_number: invoiceNumber,
         supplier_id: primarySupplierId,
         status: isPaid ? 'confirmed' : 'draft',
+        statusPago: isPaid,
         subtotal: invoiceSubtotal,
         tax_amount: taxAmount,
         total: total,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         created_by: user.uid,
+        confirmed_at: null,
+        confirmed_by: null,
       };
 
       if (isPaid) {
         invoiceData.confirmed_at = new Date().toISOString();
         invoiceData.confirmed_by = user.uid;
       }
+
+      console.log('Datos de factura que se guardarán:', invoiceData);
 
       batch.set(invoiceRef, invoiceData);
 

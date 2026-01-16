@@ -21,7 +21,8 @@ import {
   Calendar,
   FileText,
   Bug,
-  Wrench
+  Wrench,
+  Lock
 } from 'lucide-react';
 
 interface SupplierWithPaymentInfo extends Supplier {
@@ -284,26 +285,48 @@ export default function Suppliers() {
   async function markInvoiceAsPaid(invoiceId: string) {
     if (!user) return;
 
-    if (!confirm('¿Confirmar que se realizó el pago de esta factura?')) {
+    const password = prompt('🔒 SEGURIDAD: Ingrese la contraseña para confirmar el pago\n\n(Capa de protección contra fraudes)');
+
+    if (!password) {
+      return;
+    }
+
+    if (password !== '140126') {
+      alert('❌ Contraseña incorrecta. No se puede confirmar el pago.');
       return;
     }
 
     try {
+      const now = new Date().toISOString();
+
       await updateDoc(doc(db, 'purchase_invoices', invoiceId), {
         status: 'confirmed',
-        confirmed_at: new Date().toISOString(),
+        statusPago: true,
+        confirmed_at: now,
         confirmed_by: user.uid,
-        updated_at: new Date().toISOString()
+        updated_at: now,
+        payment_confirmed_date: now,
+        payment_confirmed_by: user.uid
       });
 
       if (selectedSupplier) {
         await loadSupplierDetails(selectedSupplier.id);
       }
       await loadSuppliers();
-      alert('Factura marcada como pagada');
+
+      const confirmationDate = new Date(now).toLocaleString('es-MX', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+
+      alert(`✅ Pago registrado exitosamente\n\nFecha y hora: ${confirmationDate}\nRegistrado por: ${user.email}`);
     } catch (error) {
       console.error('Error marking invoice as paid:', error);
-      alert('Error al marcar la factura como pagada');
+      alert('❌ Error al registrar el pago: ' + (error as Error).message);
     }
   }
 
@@ -909,12 +932,13 @@ export default function Suppliers() {
                                 <FileText className="w-4 h-4 mr-2" />
                                 Ver Factura
                               </button>
-                              {invoice.status === 'draft' && (
+                              {(invoice.status === 'draft' || !invoice.statusPago) && (
                                 <button
                                   onClick={() => markInvoiceAsPaid(invoice.id)}
-                                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium"
+                                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium inline-flex items-center justify-center"
                                 >
-                                  Marcar como Pagado
+                                  <Lock className="w-4 h-4 mr-2" />
+                                  Registrar Pago
                                 </button>
                               )}
                             </div>
