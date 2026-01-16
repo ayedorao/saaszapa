@@ -170,5 +170,17 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated();
     }
+
+    match /action_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /login_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if true;
+      allow delete: if isAdmin();
+    }
   }
 }

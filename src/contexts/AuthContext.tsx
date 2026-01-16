@@ -6,7 +6,7 @@ import {
   signOut as firebaseSignOut,
   onAuthStateChanged
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { Profile, UserRole } from '../types/database';
 
@@ -87,7 +87,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signIn(email: string, password: string) {
-    await signInWithEmailAndPassword(auth, email, password);
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+
+    try {
+      await addDoc(collection(db, 'login_logs'), {
+        user_id: userCredential.user.uid,
+        user_email: userCredential.user.email,
+        timestamp: new Date().toISOString(),
+        ip_address: '',
+        user_agent: navigator.userAgent
+      });
+    } catch (error) {
+      console.error('Error logging login:', error);
+    }
   }
 
   async function signUp(email: string, password: string, fullName: string) {
