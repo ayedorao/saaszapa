@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, getDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import { ProductVariant, Customer, CashSession, Promotion } from '../types/database';
+import { ProductVariant, Customer, CashSession, Promotion, Sale, Store, QuickCustomer } from '../types/database';
 import POSTerminalSettings from '../components/POSTerminalSettings';
+import CommercialInvoice from '../components/CommercialInvoice';
+import ShoeBoxLabel from '../components/ShoeBoxLabel';
 import {
   Search,
   Plus,
@@ -15,8 +17,10 @@ import {
   Smartphone,
   Tag,
   Settings,
-  Wifi,
   Wallet,
+  UserPlus,
+  Mail,
+  X,
 } from 'lucide-react';
 
 interface CartItem {
@@ -32,6 +36,7 @@ export default function POS() {
   const [variants, setVariants] = useState<ProductVariant[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [appliedPromotion, setAppliedPromotion] = useState<Promotion | null>(null);
@@ -43,12 +48,32 @@ export default function POS() {
   const [loading, setLoading] = useState(false);
   const [showPOSSettings, setShowPOSSettings] = useState(false);
 
+  const [quickCustomerMode, setQuickCustomerMode] = useState(false);
+  const [quickCustomerData, setQuickCustomerData] = useState<QuickCustomer>({ name: '', email: '' });
+
+  const [completedSale, setCompletedSale] = useState<Sale | null>(null);
+  const [showInvoice, setShowInvoice] = useState(false);
+
+  const [selectedVariantForLabel, setSelectedVariantForLabel] = useState<ProductVariant | null>(null);
+  const [showLabelModal, setShowLabelModal] = useState(false);
+
   useEffect(() => {
     loadVariants();
     loadCustomers();
     loadPromotions();
     loadCurrentSession();
+    loadStores();
   }, [user]);
+
+  async function loadStores() {
+    try {
+      const snapshot = await getDocs(collection(db, 'stores'));
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Store[];
+      setStores(data);
+    } catch (error) {
+      console.error('Error loading stores:', error);
+    }
+  }
 
   async function loadCurrentSession() {
     if (!user) return;
@@ -204,12 +229,15 @@ export default function POS() {
   function clearCart() {
     setCart([]);
     setSelectedCustomer(null);
+    setQuickCustomerMode(false);
+    setQuickCustomerData({ name: '', email: '' });
     setAppliedPromotion(null);
     setPaymentMethod('cash');
     setPaymentAmount('');
   }
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const taxAmount = subtotal * 0.16;
   let discount = 0;
 
   if (appliedPromotion) {
@@ -220,12 +248,24 @@ export default function POS() {
     }
   }
 
-  const total = Math.max(0, subtotal - discount);
+  const total = Math.max(0, subtotal + taxAmount - discount);
 
   async function processSale() {
     if (cart.length === 0) {
       alert('El carrito está vacío');
       return;
+    }
+
+    if (!quickCustomerMode && !selectedCustomer && paymentMethod !== 'cash' && paymentMethod !== 'card' && paymentMethod !== 'transfer') {
+      alert('Selecciona un cliente o usa venta rápida');
+      return;
+    }
+
+    if (quickCustomerMode) {
+      if (!quickCustomerData.name || !quickCustomerData.email) {
+        alert('Ingresa nombre y email del cliente para venta rápida');
+        return;
+      }
     }
 
     if (paymentMethod === 'credit') {
@@ -249,18 +289,28 @@ export default function POS() {
       const batch = writeBatch(db);
       const saleNumber = `SALE-${Date.now()}`;
 
+      const activeStore = stores.find(s => s.active);
+      const storeId = activeStore?.id || null;
+
       const saleRef = doc(collection(db, 'sales'));
-      batch.set(saleRef, {
+      const saleData: any = {
         sale_number: saleNumber,
-        customer_id: selectedCustomer?.id || null,
+        customer_id: quickCustomerMode ? null : (selectedCustomer?.id || null),
+        quick_customer: quickCustomerMode ? quickCustomerData : null,
+        store_id: storeId,
         user_id: user?.uid,
         session_id: currentSession?.id || null,
         subtotal,
-        discount,
+        discount_amount: discount,
+        tax_amount: taxAmount,
         total,
         status: 'completed',
         created_at: new Date().toISOString(),
-      });
+        completed_at: new Date().toISOString(),
+        invoice_sent: false,
+      };
+
+      batch.set(saleRef, saleData);
 
       for (const item of cart) {
         const saleItemRef = doc(collection(db, 'sale_items'));
@@ -269,6 +319,7 @@ export default function POS() {
           variant_id: item.variant.id,
           quantity: item.quantity,
           unit_price: item.price,
+          discount_amount: 0,
           subtotal: item.subtotal,
           created_at: new Date().toISOString(),
         });
@@ -317,18 +368,35 @@ export default function POS() {
 
       await batch.commit();
 
-      let confirmMessage = `Venta completada!\nVenta #${saleNumber}\nTotal: $${total.toFixed(2)}`;
+      const saleDoc = await getDoc(saleRef);
+      const completedSaleData = {
+        id: saleDoc.id,
+        ...saleDoc.data(),
+        items: cart.map(item => ({
+          id: '',
+          sale_id: saleRef.id,
+          variant_id: item.variant.id,
+          quantity: item.quantity,
+          unit_price: item.price,
+          discount_amount: 0,
+          subtotal: item.subtotal,
+          created_at: new Date().toISOString(),
+          variant: item.variant,
+        })),
+        payments: [{
+          id: paymentRef.id,
+          sale_id: saleRef.id,
+          method: paymentMethod,
+          amount: total,
+          status: 'completed' as const,
+          created_at: new Date().toISOString(),
+        }],
+        customer: selectedCustomer,
+        store: activeStore,
+      } as Sale;
 
-      if (paymentMethod === 'credit') {
-        const newCredit = (selectedCustomer!.store_credit || 0) - total;
-        confirmMessage += `\nPagado con crédito\nCrédito restante: $${newCredit.toFixed(2)}`;
-      } else {
-        const change = parseFloat(paymentAmount) - total;
-        confirmMessage += `\nPagado: $${parseFloat(paymentAmount).toFixed(2)}\nCambio: $${change.toFixed(2)}`;
-      }
-
-      alert(confirmMessage);
-
+      setCompletedSale(completedSaleData);
+      setShowInvoice(true);
       setShowPaymentModal(false);
       clearCart();
     } catch (error) {
@@ -341,7 +409,8 @@ export default function POS() {
 
   const filteredVariants = variants.filter(v =>
     v.sku?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
+    v.product?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    v.barcode?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -373,16 +442,18 @@ export default function POS() {
             {filteredVariants.length > 0 ? (
               <div className="divide-y divide-slate-200">
                 {filteredVariants.map((variant) => (
-                  <button
+                  <div
                     key={variant.id}
-                    onClick={() => {
-                      addToCart(variant);
-                      setSearchTerm('');
-                    }}
-                    disabled={(variant.inventory?.quantity || 0) === 0}
-                    className="w-full p-4 hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-left flex items-center justify-between"
+                    className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between"
                   >
-                    <div className="flex-1">
+                    <button
+                      onClick={() => {
+                        addToCart(variant);
+                        setSearchTerm('');
+                      }}
+                      disabled={(variant.inventory?.quantity || 0) === 0}
+                      className="flex-1 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <h3 className="font-semibold text-slate-900 text-sm mb-1">
                         {variant.product?.name}
                       </h3>
@@ -393,8 +464,18 @@ export default function POS() {
                         <span>•</span>
                         <span>Color: {variant.color?.name}</span>
                       </div>
-                    </div>
+                    </button>
                     <div className="flex items-center space-x-4">
+                      <button
+                        onClick={() => {
+                          setSelectedVariantForLabel(variant);
+                          setShowLabelModal(true);
+                        }}
+                        className="p-2 bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+                        title="Imprimir Etiqueta de Caja"
+                      >
+                        <Tag className="w-4 h-4" />
+                      </button>
                       <span className="font-bold text-slate-900">${variant.price.toFixed(2)}</span>
                       <span className={`text-xs px-2 py-1 rounded ${
                         (variant.inventory?.quantity || 0) > 0
@@ -404,7 +485,7 @@ export default function POS() {
                         Stock: {variant.inventory?.quantity || 0}
                       </span>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -442,6 +523,29 @@ export default function POS() {
               </div>
               <button
                 onClick={() => setSelectedCustomer(null)}
+                className="text-xs text-red-600 hover:text-red-700"
+              >
+                Quitar
+              </button>
+            </div>
+          </div>
+        ) : quickCustomerMode && quickCustomerData.name ? (
+          <div className="bg-blue-50 rounded-lg p-3 mb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <UserPlus className="w-4 h-4 text-blue-600" />
+                <div>
+                  <span className="text-sm font-medium text-blue-900 block">
+                    {quickCustomerData.name}
+                  </span>
+                  <span className="text-xs text-blue-700">{quickCustomerData.email}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setQuickCustomerMode(false);
+                  setQuickCustomerData({ name: '', email: '' });
+                }}
                 className="text-xs text-red-600 hover:text-red-700"
               >
                 Quitar
@@ -514,6 +618,11 @@ export default function POS() {
                 </div>
               )}
 
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">IVA (16%):</span>
+                <span className="font-medium text-slate-900">${taxAmount.toFixed(2)}</span>
+              </div>
+
               <div className="flex items-center justify-between text-lg font-bold pt-2 border-t">
                 <span>Total:</span>
                 <span>${total.toFixed(2)}</span>
@@ -543,26 +652,108 @@ export default function POS() {
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-xl font-bold text-slate-900 mb-4">Seleccionar Cliente</h3>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-              {customers.map((customer) => (
+            <div className="mb-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h4 className="font-semibold text-blue-900 flex items-center space-x-2">
+                    <UserPlus className="w-5 h-5" />
+                    <span>Venta Rápida (Walk-in)</span>
+                  </h4>
+                  <p className="text-sm text-blue-700 mt-1">Solo nombre y email - sin registro completo</p>
+                </div>
                 <button
-                  key={customer.id}
-                  onClick={() => {
-                    setSelectedCustomer(customer);
-                    setShowCustomerModal(false);
-                  }}
-                  className="w-full text-left p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                  onClick={() => setQuickCustomerMode(!quickCustomerMode)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    quickCustomerMode
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-white text-blue-600 border-2 border-blue-300'
+                  }`}
                 >
-                  <p className="font-medium text-slate-900">
-                    {customer.first_name} {customer.last_name}
-                  </p>
-                  <p className="text-sm text-slate-600">{customer.email || customer.phone}</p>
+                  {quickCustomerMode ? 'Activado' : 'Activar'}
                 </button>
-              ))}
+              </div>
+
+              {quickCustomerMode && (
+                <div className="space-y-3 pt-3 border-t border-blue-200">
+                  <div>
+                    <label className="block text-sm font-medium text-blue-900 mb-1">
+                      Nombre del Cliente *
+                    </label>
+                    <input
+                      type="text"
+                      value={quickCustomerData.name}
+                      onChange={(e) => setQuickCustomerData({ ...quickCustomerData, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      placeholder="Juan Pérez"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-blue-900 mb-1">
+                      Email *
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-400 w-4 h-4" />
+                      <input
+                        type="email"
+                        value={quickCustomerData.email}
+                        onChange={(e) => setQuickCustomerData({ ...quickCustomerData, email: e.target.value })}
+                        className="w-full pl-10 pr-3 py-2 border border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="cliente@ejemplo.com"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-700 bg-blue-100 p-2 rounded">
+                    ✉️ La factura se enviará automáticamente a este email
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (quickCustomerData.name && quickCustomerData.email) {
+                        setShowCustomerModal(false);
+                      } else {
+                        alert('Completa nombre y email');
+                      }
+                    }}
+                    disabled={!quickCustomerData.name || !quickCustomerData.email}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Confirmar Venta Rápida
+                  </button>
+                </div>
+              )}
             </div>
 
+            {!quickCustomerMode && (
+              <>
+                <div className="mb-2 text-sm font-medium text-slate-700">
+                  O selecciona un cliente registrado:
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto mb-4">
+                  {customers.map((customer) => (
+                    <button
+                      key={customer.id}
+                      onClick={() => {
+                        setSelectedCustomer(customer);
+                        setQuickCustomerMode(false);
+                        setQuickCustomerData({ name: '', email: '' });
+                        setShowCustomerModal(false);
+                      }}
+                      className="w-full text-left p-3 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                    >
+                      <p className="font-medium text-slate-900">
+                        {customer.first_name} {customer.last_name}
+                      </p>
+                      <p className="text-sm text-slate-600">{customer.email || customer.phone}</p>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             <button
-              onClick={() => setShowCustomerModal(false)}
+              onClick={() => {
+                setShowCustomerModal(false);
+                setQuickCustomerMode(false);
+              }}
               className="w-full px-4 py-3 bg-slate-100 text-slate-900 rounded-lg font-semibold hover:bg-slate-200 transition-colors"
             >
               Cancelar
@@ -700,6 +891,54 @@ export default function POS() {
                 {loading ? 'Procesando...' : 'Completar Venta'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showInvoice && completedSale && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="relative w-full max-w-5xl my-8">
+            <button
+              onClick={() => {
+                setShowInvoice(false);
+                setCompletedSale(null);
+              }}
+              className="absolute -top-4 -right-4 bg-white rounded-full p-2 shadow-lg hover:bg-slate-100 z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+            <CommercialInvoice
+              sale={completedSale}
+              store={completedSale.store || stores.find(s => s.active) || stores[0]}
+              onClose={() => {
+                setShowInvoice(false);
+                setCompletedSale(null);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {showLabelModal && selectedVariantForLabel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-4xl w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-slate-900">Etiqueta de Caja</h3>
+              <button
+                onClick={() => {
+                  setShowLabelModal(false);
+                  setSelectedVariantForLabel(null);
+                }}
+                className="p-2 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <ShoeBoxLabel
+              variant={selectedVariantForLabel}
+              price={selectedVariantForLabel.price}
+              storeName={stores.find(s => s.active)?.name || 'Tienda'}
+            />
           </div>
         </div>
       )}
