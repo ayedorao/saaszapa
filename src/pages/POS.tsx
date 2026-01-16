@@ -199,6 +199,38 @@ export default function POS() {
     return applicablePromotions[0];
   }
 
+  function applyBestPromotion() {
+    if (cart.length === 0) {
+      alert('El carrito está vacío');
+      return;
+    }
+
+    const cartSubtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
+    let bestPromotion: Promotion | null = null;
+
+    for (const item of cart) {
+      const promotion = findApplicablePromotion(
+        item.variant.product_id as string,
+        item.variant.id,
+        item.quantity,
+        cartSubtotal
+      );
+
+      if (promotion) {
+        if (!bestPromotion || (promotion.priority || 0) > (bestPromotion.priority || 0)) {
+          bestPromotion = promotion;
+        }
+      }
+    }
+
+    if (bestPromotion) {
+      setAppliedPromotion(bestPromotion);
+      alert(`¡Promoción aplicada! ${bestPromotion.name}: ${bestPromotion.type === 'percentage' ? bestPromotion.value + '%' : '$' + bestPromotion.value} de descuento`);
+    } else {
+      alert('No hay promociones disponibles para los productos en el carrito');
+    }
+  }
+
   function addToCart(variant: ProductVariant) {
     const stockQuantity = variant.inventory?.quantity || 0;
     const currentInCart = cart.find(item => item.variant.id === variant.id)?.quantity || 0;
@@ -232,19 +264,6 @@ export default function POS() {
     }
 
     setCart(updatedCart);
-
-    const tempSubtotal = updatedCart.reduce((sum, item) => sum + item.subtotal, 0);
-    const promotion = findApplicablePromotion(
-      variant.product_id as string,
-      variant.id,
-      newQuantity,
-      tempSubtotal
-    );
-
-    if (promotion && promotion.id !== appliedPromotion?.id) {
-      setAppliedPromotion(promotion);
-      alert(`¡Promoción aplicada! ${promotion.name}: ${promotion.type === 'percentage' ? promotion.value + '%' : '$' + promotion.value} de descuento`);
-    }
   }
 
   function updateCartItemQuantity(variantId: string, newQuantity: number) {
@@ -697,6 +716,32 @@ export default function POS() {
               >
                 Completar Venta
               </button>
+              {!appliedPromotion && promotions.length > 0 && (
+                <button
+                  onClick={applyBestPromotion}
+                  className="w-full px-4 py-3 bg-green-100 text-green-700 rounded-lg font-semibold hover:bg-green-200 transition-colors"
+                >
+                  Aplicar Promoción
+                </button>
+              )}
+              {appliedPromotion && (
+                <div className="w-full px-4 py-3 bg-green-50 border-2 border-green-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-green-800">{appliedPromotion.name}</p>
+                      <p className="text-xs text-green-600">
+                        {appliedPromotion.type === 'percentage' ? `${appliedPromotion.value}% de descuento` : `$${appliedPromotion.value} de descuento`}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setAppliedPromotion(null)}
+                      className="p-1 hover:bg-green-100 rounded"
+                    >
+                      <X className="w-4 h-4 text-green-700" />
+                    </button>
+                  </div>
+                </div>
+              )}
               <button
                 onClick={clearCart}
                 className="w-full px-4 py-3 bg-red-100 text-red-700 rounded-lg font-semibold hover:bg-red-200 transition-colors"

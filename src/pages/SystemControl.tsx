@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, doc, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, doc, orderBy, query, writeBatch } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle, Database } from 'lucide-react';
+import { AlertCircle, Info, AlertTriangle, AlertOctagon, Bell, Plus, X, Calendar, Shield, FileText, CheckCircle, XCircle, Database, Trash2, Lock, Activity, LogIn } from 'lucide-react';
 import { cleanupDuplicateInventory } from '../utils/cleanupInventory';
 
 interface Announcement {
@@ -41,17 +41,42 @@ interface Incident {
   resolution_notes?: string;
 }
 
+interface ActionLog {
+  id: string;
+  user_id: string;
+  user_email: string;
+  action_type: string;
+  module: string;
+  description: string;
+  timestamp: string;
+  metadata?: any;
+}
+
+interface LoginLog {
+  id: string;
+  user_id: string;
+  user_email: string;
+  timestamp: string;
+  ip_address?: string;
+  user_agent?: string;
+}
+
 export default function SystemControl() {
   const { user } = useAuth();
   const { profile } = useUserRole();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [accessAttempts, setAccessAttempts] = useState<AccessAttempt[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [actionLogs, setActionLogs] = useState<ActionLog[]>([]);
+  const [loginLogs, setLoginLogs] = useState<LoginLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'announcements' | 'attempts' | 'incidents'>('announcements');
+  const [activeTab, setActiveTab] = useState<'announcements' | 'attempts' | 'incidents' | 'actions' | 'logins'>('announcements');
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
   const [cleaningInventory, setCleaningInventory] = useState(false);
+  const [showClearLogsModal, setShowClearLogsModal] = useState(false);
+  const [clearLogsPassword, setClearLogsPassword] = useState('');
+  const [clearingLogs, setClearingLogs] = useState(false);
   const [formData, setFormData] = useState({
     type: 'info' as 'info' | 'minor' | 'critical' | 'update',
     title: '',
@@ -70,11 +95,79 @@ export default function SystemControl() {
         loadAnnouncements(),
         loadAccessAttempts(),
         loadIncidents(),
+        loadActionLogs(),
+        loadLoginLogs(),
       ]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadActionLogs() {
+    try {
+      const q = query(collection(db, 'action_logs'), orderBy('timestamp', 'desc'));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ActionLog[];
+      setActionLogs(data);
+    } catch (error) {
+      console.error('Error loading action logs:', error);
+    }
+  }
+
+  async function loadLoginLogs() {
+    try {
+      const q = query(collection(db, 'login_logs'), orderBy('timestamp', 'desc'));
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as LoginLog[];
+      setLoginLogs(data);
+    } catch (error) {
+      console.error('Error loading login logs:', error);
+    }
+  }
+
+  async function clearAllLogs() {
+    if (clearLogsPassword !== '140126') {
+      alert('Contraseña incorrecta');
+      return;
+    }
+
+    if (!confirm('¿Estás seguro de que deseas eliminar TODOS los registros de acciones e inicios de sesión?')) {
+      return;
+    }
+
+    setClearingLogs(true);
+    try {
+      const collectionsToDelete = ['action_logs', 'login_logs'];
+
+      for (const collectionName of collectionsToDelete) {
+        const snapshot = await getDocs(collection(db, collectionName));
+        const batch = writeBatch(db);
+        snapshot.docs.forEach(doc => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`Colección ${collectionName} limpiada`);
+      }
+
+      await loadActionLogs();
+      await loadLoginLogs();
+
+      alert('Registros eliminados exitosamente');
+      setShowClearLogsModal(false);
+      setClearLogsPassword('');
+    } catch (error) {
+      console.error('Error clearing logs:', error);
+      alert('Error al eliminar registros');
+    } finally {
+      setClearingLogs(false);
     }
   }
 
@@ -357,7 +450,44 @@ export default function SystemControl() {
                 <span>Incidentes ({incidents.filter(i => i.status !== 'closed').length})</span>
               </div>
             </button>
+            <button
+              onClick={() => setActiveTab('actions')}
+              className={`py-4 border-b-2 font-medium transition-colors ${
+                activeTab === 'actions'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Activity className="w-5 h-5" />
+                <span>Registro de Acciones ({actionLogs.length})</span>
+              </div>
+            </button>
+            <button
+              onClick={() => setActiveTab('logins')}
+              className={`py-4 border-b-2 font-medium transition-colors ${
+                activeTab === 'logins'
+                  ? 'border-slate-900 text-slate-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <LogIn className="w-5 h-5" />
+                <span>Inicios de Sesión ({loginLogs.length})</span>
+              </div>
+            </button>
           </nav>
+          {(activeTab === 'actions' || activeTab === 'logins') && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowClearLogsModal(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center space-x-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Limpiar Registros</span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="p-6">
@@ -529,8 +659,141 @@ export default function SystemControl() {
               )}
             </div>
           )}
+
+          {activeTab === 'actions' && (
+            <div className="space-y-3">
+              {actionLogs.map(log => (
+                <div
+                  key={log.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <Activity className="w-5 h-5 text-blue-600" />
+                        <span className="font-semibold text-slate-900">{log.action_type}</span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                          {log.module}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-700 mb-2">{log.description}</p>
+                      <div className="flex items-center space-x-4 text-xs text-slate-500">
+                        <span>{log.user_email}</span>
+                        <span>•</span>
+                        <span>{new Date(log.timestamp).toLocaleString('es-ES')}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {actionLogs.length === 0 && (
+                <div className="text-center py-12">
+                  <Activity className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600">No hay acciones registradas</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'logins' && (
+            <div className="space-y-3">
+              {loginLogs.map(log => (
+                <div
+                  key={log.id}
+                  className="bg-white rounded-xl shadow-sm border border-slate-200 p-4"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <LogIn className="w-5 h-5 text-green-600" />
+                        <span className="font-semibold text-slate-900">Inicio de Sesión</span>
+                      </div>
+                      <div className="flex items-center space-x-4 text-sm text-slate-700">
+                        <span>{log.user_email}</span>
+                        <span>•</span>
+                        <span>{new Date(log.timestamp).toLocaleString('es-ES')}</span>
+                      </div>
+                      {log.ip_address && (
+                        <p className="text-xs text-slate-500 mt-1">IP: {log.ip_address}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {loginLogs.length === 0 && (
+                <div className="text-center py-12">
+                  <LogIn className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+                  <p className="text-slate-600">No hay inicios de sesión registrados</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
+
+      {showClearLogsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <Trash2 className="w-10 h-10 text-red-600" />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-red-800 mb-4 text-center">ADVERTENCIA</h3>
+            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
+              <p className="text-red-800 font-semibold mb-3 text-center">Esta acción eliminará:</p>
+              <ul className="space-y-2 text-red-700 text-sm">
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODOS los registros de acciones realizadas</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>TODOS los registros de inicios de sesión</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span className="font-bold text-red-900">NO SE PUEDE DESHACER</span>
+                </li>
+              </ul>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                <Lock className="w-4 h-4 inline mr-2" />
+                Ingresa la contraseña de administrador:
+              </label>
+              <input
+                type="password"
+                value={clearLogsPassword}
+                onChange={(e) => setClearLogsPassword(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="••••••"
+              />
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowClearLogsModal(false);
+                  setClearLogsPassword('');
+                }}
+                disabled={clearingLogs}
+                className="flex-1 px-4 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={clearAllLogs}
+                disabled={clearingLogs || !clearLogsPassword}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {clearingLogs ? 'Limpiando...' : 'Limpiar Registros'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">

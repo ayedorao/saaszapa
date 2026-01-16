@@ -399,8 +399,12 @@ export default function Suppliers() {
   }
 
   function editInvoice(invoiceId: string) {
+    if (!selectedStoreId) {
+      alert('Por favor selecciona una tienda primero');
+      return;
+    }
     setSelectedInvoiceId(invoiceId);
-    setCurrentView('editInvoice');
+    setCurrentView('bulkEntry');
   }
 
   function handleInvoiceEdited() {
@@ -489,6 +493,7 @@ export default function Suppliers() {
           onClose={backToList}
           onSuccess={handleBulkEntrySuccess}
           storeId={selectedStoreId}
+          editInvoiceId={selectedInvoiceId || undefined}
         />
       )}
 

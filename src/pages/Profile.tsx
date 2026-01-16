@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, deleteDoc, writeBatch, getDocs as getDocsFirestore } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserRole } from '../hooks/useUserRole';
-import { Camera, Save, Mail, Phone, User, Shield, Building, BookOpen, FileText, AlertCircle } from 'lucide-react';
+import { Camera, Save, Mail, Phone, User, Shield, Building, BookOpen, FileText, AlertCircle, Trash2, Lock } from 'lucide-react';
 import DocumentsSection from '../components/DocumentsSection';
 import IncidentReporter from '../components/IncidentReporter';
 
@@ -21,6 +21,9 @@ export default function Profile() {
   });
   const [photoURL, setPhotoURL] = useState<string>('');
   const [showIncidentReporter, setShowIncidentReporter] = useState(false);
+  const [showDatabaseCleanup, setShowDatabaseCleanup] = useState(false);
+  const [cleanupPassword, setCleanupPassword] = useState('');
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -434,6 +437,142 @@ export default function Profile() {
         </h3>
         <DocumentsSection />
       </div>
+
+      {(profile?.role === 'admin' || user?.email === 'crisdoraodxb@gmail.com') && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-xl shadow-lg p-6">
+          <h3 className="text-lg font-semibold text-red-800 mb-3 flex items-center space-x-2">
+            <Trash2 className="w-5 h-5" />
+            <span>Zona Peligrosa</span>
+          </h3>
+          <p className="text-red-700 mb-4 text-sm">
+            Esta acción eliminará TODOS los datos del sistema de forma permanente. Esta operación NO se puede deshacer.
+          </p>
+          <button
+            onClick={() => setShowDatabaseCleanup(true)}
+            className="w-full px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium flex items-center justify-center space-x-2"
+          >
+            <Trash2 className="w-5 h-5" />
+            <span>Limpiar Base de Datos</span>
+          </button>
+        </div>
+      )}
+
+      {showDatabaseCleanup && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-10 h-10 text-red-600" />
+              </div>
+            </div>
+            <h3 className="text-2xl font-bold text-red-800 mb-4 text-center">ADVERTENCIA CRÍTICA</h3>
+            <div className="bg-red-50 border-2 border-red-300 rounded-lg p-4 mb-4">
+              <p className="text-red-800 font-semibold mb-3 text-center">Esta acción:</p>
+              <ul className="space-y-2 text-red-700 text-sm">
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>Eliminará TODOS los productos, variantes e inventario</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>Borrará TODAS las ventas y facturas</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>Eliminará TODOS los proveedores y compras</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span>Borrará TODOS los clientes y promociones</span>
+                </li>
+                <li className="flex items-start space-x-2">
+                  <span className="font-bold">•</span>
+                  <span className="font-bold text-red-900">NO SE PUEDE DESHACER</span>
+                </li>
+              </ul>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                <Lock className="w-4 h-4 inline mr-2" />
+                Ingresa la contraseña de administrador:
+              </label>
+              <input
+                type="password"
+                value={cleanupPassword}
+                onChange={(e) => setCleanupPassword(e.target.value)}
+                className="w-full px-4 py-2 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                placeholder="••••••"
+              />
+            </div>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => {
+                  setShowDatabaseCleanup(false);
+                  setCleanupPassword('');
+                }}
+                disabled={cleanupLoading}
+                className="flex-1 px-4 py-3 bg-slate-200 text-slate-900 rounded-lg font-semibold hover:bg-slate-300 transition-colors disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={async () => {
+                  if (cleanupPassword !== '140126') {
+                    alert('Contraseña incorrecta');
+                    return;
+                  }
+
+                  if (!confirm('¿Estás ABSOLUTAMENTE SEGURO? Esta acción es IRREVERSIBLE y borrará TODOS los datos.')) {
+                    return;
+                  }
+
+                  setCleanupLoading(true);
+                  try {
+                    const collectionsToDelete = [
+                      'products',
+                      'product_variants',
+                      'inventory',
+                      'inventory_movements',
+                      'sales',
+                      'sale_items',
+                      'purchase_invoices',
+                      'purchase_invoice_items',
+                      'suppliers',
+                      'customers',
+                      'promotions',
+                      'sizes',
+                      'colors'
+                    ];
+
+                    for (const collectionName of collectionsToDelete) {
+                      const snapshot = await getDocs(collection(db, collectionName));
+                      const batch = writeBatch(db);
+                      snapshot.docs.forEach(doc => {
+                        batch.delete(doc.ref);
+                      });
+                      await batch.commit();
+                      console.log(`Colección ${collectionName} limpiada`);
+                    }
+
+                    alert('Base de datos limpiada exitosamente. TODOS los datos han sido eliminados.');
+                    setShowDatabaseCleanup(false);
+                    setCleanupPassword('');
+                  } catch (error) {
+                    console.error('Error limpiando base de datos:', error);
+                    alert('Error al limpiar la base de datos');
+                  } finally {
+                    setCleanupLoading(false);
+                  }
+                }}
+                disabled={cleanupLoading || !cleanupPassword}
+                className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {cleanupLoading ? 'Limpiando...' : 'Limpiar TODO'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showIncidentReporter && (
         <IncidentReporter
