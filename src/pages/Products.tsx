@@ -5,7 +5,6 @@ import { useAuth } from '../contexts/AuthContext';
 import { Product, ProductVariant, Size, Color, Inventory } from '../types/database';
 import { Plus, Search, Package, Eye, X, RefreshCw, Edit2, Trash2, PackagePlus } from 'lucide-react';
 import Barcode from 'react-barcode';
-import SeedDataButton from '../components/SeedDataButton';
 import { generateBarcode, validateBarcode } from '../utils/barcodeGenerator';
 import BulkProductEntry from '../components/BulkProductEntry';
 import PurchaseInvoiceEditor from '../components/PurchaseInvoiceEditor';
@@ -800,7 +799,6 @@ export default function Products() {
           <p className="text-slate-600 mt-1">Gestiona tu catálogo de productos</p>
         </div>
         <div className="flex items-center space-x-3">
-          <SeedDataButton />
           <button
             onClick={loadAllData}
             disabled={dataLoading}
@@ -814,14 +812,7 @@ export default function Products() {
             className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
           >
             <PackagePlus className="w-5 h-5 mr-2" />
-            Entrada Masiva
-          </button>
-          <button
-            onClick={() => setShowModal(true)}
-            className="inline-flex items-center px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors shadow-lg hover:shadow-xl"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Nuevo Producto
+            Entrada
           </button>
         </div>
       </div>
