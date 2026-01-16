@@ -3,10 +3,14 @@ import { collection, query, where, getDocs, addDoc, updateDoc, doc, writeBatch }
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Product, ProductVariant, Size, Color, Inventory } from '../types/database';
-import { Plus, Search, Package, Eye, X, RefreshCw, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Search, Package, Eye, X, RefreshCw, Edit2, Trash2, PackagePlus } from 'lucide-react';
 import Barcode from 'react-barcode';
 import SeedDataButton from '../components/SeedDataButton';
 import { generateBarcode, validateBarcode } from '../utils/barcodeGenerator';
+import BulkProductEntry from '../components/BulkProductEntry';
+import PurchaseInvoiceEditor from '../components/PurchaseInvoiceEditor';
+import ProductSaveConfirmation from '../components/ProductSaveConfirmation';
+import ProfessionalBarcodeLabel from '../components/ProfessionalBarcodeLabel';
 
 interface VariantWithDetails extends ProductVariant {
   product?: Product;
@@ -32,6 +36,12 @@ export default function Products() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showBulkEntry, setShowBulkEntry] = useState(false);
+  const [showInvoiceEditor, setShowInvoiceEditor] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showLabelPrint, setShowLabelPrint] = useState(false);
+  const [currentInvoiceId, setCurrentInvoiceId] = useState<string | null>(null);
+  const [currentProductIds, setCurrentProductIds] = useState<string[]>([]);
   const [selectedVariant, setSelectedVariant] = useState<VariantWithDetails | null>(null);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(false);
@@ -725,6 +735,38 @@ export default function Products() {
     }, 250);
   }
 
+  function handleBulkEntrySuccess(invoiceId: string, products: any[]) {
+    setCurrentInvoiceId(invoiceId);
+    setCurrentProductIds(products.map(p => p.variantId));
+    setShowBulkEntry(false);
+    setShowInvoiceEditor(true);
+  }
+
+  function handleInvoiceConfirmed(productIds: string[]) {
+    setCurrentProductIds(productIds);
+    setShowInvoiceEditor(false);
+    setShowConfirmation(true);
+  }
+
+  function handlePrintNow() {
+    setShowConfirmation(false);
+    setShowLabelPrint(true);
+  }
+
+  function handlePrintClose() {
+    setShowLabelPrint(false);
+    setCurrentInvoiceId(null);
+    setCurrentProductIds([]);
+    loadAllData();
+  }
+
+  function handleConfirmationClose() {
+    setShowConfirmation(false);
+    setCurrentInvoiceId(null);
+    setCurrentProductIds([]);
+    loadAllData();
+  }
+
   if (dataLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -766,6 +808,13 @@ export default function Products() {
           >
             <RefreshCw className={`w-5 h-5 mr-2 ${dataLoading ? 'animate-spin' : ''}`} />
             Actualizar
+          </button>
+          <button
+            onClick={() => setShowBulkEntry(true)}
+            className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
+          >
+            <PackagePlus className="w-5 h-5 mr-2" />
+            Entrada Masiva
           </button>
           <button
             onClick={() => setShowModal(true)}
@@ -1421,6 +1470,45 @@ export default function Products() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {showBulkEntry && (
+        <BulkProductEntry
+          onClose={() => setShowBulkEntry(false)}
+          onSuccess={handleBulkEntrySuccess}
+          storeId={selectedStoreId}
+        />
+      )}
+
+      {showInvoiceEditor && currentInvoiceId && (
+        <PurchaseInvoiceEditor
+          invoiceId={currentInvoiceId}
+          onClose={() => {
+            setShowInvoiceEditor(false);
+            setCurrentInvoiceId(null);
+            loadAllData();
+          }}
+          onConfirmed={handleInvoiceConfirmed}
+        />
+      )}
+
+      {showConfirmation && currentProductIds.length > 0 && (
+        <ProductSaveConfirmation
+          productIds={currentProductIds}
+          onClose={handleConfirmationClose}
+          onPrintNow={handlePrintNow}
+          storeId={selectedStoreId}
+        />
+      )}
+
+      {showLabelPrint && currentProductIds.length > 0 && (
+        <div className="fixed inset-0 bg-white z-50 overflow-y-auto">
+          <ProfessionalBarcodeLabel
+            variantIds={currentProductIds}
+            storeName={stores.find(s => s.id === selectedStoreId)?.name}
+            onClose={handlePrintClose}
+          />
         </div>
       )}
     </div>

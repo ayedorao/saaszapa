@@ -343,3 +343,78 @@ export interface Store {
   created_at: string;
   updated_at: string;
 }
+
+export interface Supplier {
+  id: string;
+  code: string;
+  name: string;
+  contact_person?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  tax_id?: string;
+  notes?: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+}
+
+export type PurchaseInvoiceStatus = 'draft' | 'confirmed' | 'cancelled';
+
+export interface PurchaseInvoice {
+  id: string;
+  invoice_number: string;
+  supplier_id?: string;
+  status: PurchaseInvoiceStatus;
+  subtotal: number;
+  tax_amount: number;
+  total: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  confirmed_at?: string;
+  confirmed_by?: string;
+  created_by?: string;
+  supplier?: Supplier;
+  items?: PurchaseInvoiceItem[];
+  revision_history?: PurchaseInvoiceRevision[];
+}
+
+export interface PurchaseInvoiceItem {
+  id: string;
+  invoice_id: string;
+  variant_id: string;
+  product_name: string;
+  supplier_id?: string;
+  cost_price: number;
+  quantity: number;
+  subtotal: number;
+  created_at: string;
+  variant?: ProductVariant;
+  supplier?: Supplier;
+}
+
+export interface PurchaseInvoiceRevision {
+  id: string;
+  invoice_id: string;
+  revision_number: number;
+  changes: Record<string, unknown>;
+  revised_by: string;
+  revised_at: string;
+  notes?: string;
+}
+
+export interface PrintQueueItem {
+  id: string;
+  item_type: 'barcode_label' | 'invoice' | 'receipt';
+  variant_id?: string;
+  reference_id?: string;
+  reference_type?: string;
+  data: Record<string, unknown>;
+  status: 'pending' | 'printed' | 'failed';
+  created_at: string;
+  printed_at?: string;
+  printed_by?: string;
+  store_id?: string;
+}
