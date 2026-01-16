@@ -119,8 +119,14 @@ export default function Suppliers() {
         const supplierInvoices = invoicesBySupplier.get(supplier.id) || [];
         const supplierItems = itemsBySupplier.get(supplier.id) || [];
 
-        const paidInvoices = supplierInvoices.filter(inv => inv.status === 'confirmed');
-        const unpaidInvoices = supplierInvoices.filter(inv => inv.status === 'draft');
+        const paidInvoices = supplierInvoices.filter(inv => {
+          const invoiceData = inv as any;
+          return invoiceData.statusPago === true;
+        });
+        const unpaidInvoices = supplierInvoices.filter(inv => {
+          const invoiceData = inv as any;
+          return invoiceData.statusPago === false || invoiceData.statusPago === undefined;
+        });
 
         const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.total, 0);
         const pendingPayment = unpaidInvoices.reduce((sum, inv) => sum + inv.total, 0);
@@ -131,13 +137,24 @@ export default function Suppliers() {
           ? new Date(Math.max(...dates.map(d => d.getTime()))).toISOString()
           : undefined;
 
-        console.log(`Proveedor ${supplier.name}:`, {
+        console.log(`📊 Proveedor ${supplier.name}:`, {
           facturas: supplierInvoices.length,
-          items: supplierItems.length,
+          pagadas: paidInvoices.length,
+          pendientes: unpaidInvoices.length,
           totalPaid: totalPaid,
           pendingPayment: pendingPayment,
           totalOwed: totalOwed,
           hasPendingPayment: pendingPayment > 0
+        });
+
+        supplierInvoices.forEach(inv => {
+          const invData = inv as any;
+          console.log(`  📄 ${inv.invoice_number}:`, {
+            statusPago: invData.statusPago,
+            status: inv.status,
+            isPaid: invData.statusPago === true,
+            total: inv.total
+          });
         });
 
         return {
@@ -184,7 +201,17 @@ export default function Suppliers() {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
 
-      console.log(`Facturas del proveedor ${supplierId}:`, sortedInvoices);
+      console.log(`📋 Facturas del proveedor ${supplierId}:`, sortedInvoices.length);
+      sortedInvoices.forEach(inv => {
+        const invData = inv as any;
+        console.log(`  - ${inv.invoice_number}:`, {
+          statusPago: invData.statusPago,
+          status: inv.status,
+          total: inv.total,
+          confirmed_at: inv.confirmed_at
+        });
+      });
+
       setSupplierInvoices(sortedInvoices);
     } catch (error) {
       console.error('Error loading supplier details:', error);
@@ -299,6 +326,14 @@ export default function Suppliers() {
     try {
       const now = new Date().toISOString();
 
+      console.log('💰 Registrando pago para factura:', invoiceId);
+      console.log('📝 Datos que se actualizarán:', {
+        status: 'confirmed',
+        statusPago: true,
+        confirmed_at: now,
+        confirmed_by: user.uid
+      });
+
       await updateDoc(doc(db, 'purchase_invoices', invoiceId), {
         status: 'confirmed',
         statusPago: true,
@@ -309,9 +344,13 @@ export default function Suppliers() {
         payment_confirmed_by: user.uid
       });
 
+      console.log('✅ Factura actualizada en Firebase');
+
       if (selectedSupplier) {
+        console.log('🔄 Recargando detalles del proveedor...');
         await loadSupplierDetails(selectedSupplier.id);
       }
+      console.log('🔄 Recargando lista de proveedores...');
       await loadSuppliers();
 
       const confirmationDate = new Date(now).toLocaleString('es-MX', {
@@ -325,7 +364,7 @@ export default function Suppliers() {
 
       alert(`✅ Pago registrado exitosamente\n\nFecha y hora: ${confirmationDate}\nRegistrado por: ${user.email}`);
     } catch (error) {
-      console.error('Error marking invoice as paid:', error);
+      console.error('❌ Error marking invoice as paid:', error);
       alert('❌ Error al registrar el pago: ' + (error as Error).message);
     }
   }
@@ -888,11 +927,9 @@ export default function Suppliers() {
                       <div
                         key={invoice.id}
                         className={`border-2 rounded-lg p-4 ${
-                          invoice.status === 'draft'
-                            ? 'border-red-300 bg-red-50'
-                            : invoice.status === 'confirmed'
+                          (invoice as any).statusPago === true
                             ? 'border-green-300 bg-green-50'
-                            : 'border-slate-200 bg-slate-50'
+                            : 'border-red-300 bg-red-50'
                         }`}
                       >
                         <div className="flex items-start justify-between">
@@ -902,13 +939,11 @@ export default function Suppliers() {
                                 {invoice.invoice_number}
                               </span>
                               <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                invoice.status === 'draft'
-                                  ? 'bg-red-200 text-red-800'
-                                  : invoice.status === 'confirmed'
+                                (invoice as any).statusPago === true
                                   ? 'bg-green-200 text-green-800'
-                                  : 'bg-slate-200 text-slate-800'
+                                  : 'bg-red-200 text-red-800'
                               }`}>
-                                {invoice.status === 'draft' ? 'Pendiente de Pago' : invoice.status === 'confirmed' ? 'Pagado' : 'Cancelado'}
+                                {(invoice as any).statusPago === true ? 'Pagado' : 'Pendiente de Pago'}
                               </span>
                             </div>
                             <p className="text-sm text-slate-600">
@@ -932,7 +967,7 @@ export default function Suppliers() {
                                 <FileText className="w-4 h-4 mr-2" />
                                 Ver Factura
                               </button>
-                              {(invoice.status === 'draft' || !invoice.statusPago) && (
+                              {(invoice as any).statusPago !== true && (
                                 <button
                                   onClick={() => markInvoiceAsPaid(invoice.id)}
                                   className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors font-medium inline-flex items-center justify-center"
