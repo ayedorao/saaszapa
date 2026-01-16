@@ -57,6 +57,8 @@ export default function POS() {
   const [selectedVariantForLabel, setSelectedVariantForLabel] = useState<ProductVariant | null>(null);
   const [showLabelModal, setShowLabelModal] = useState(false);
 
+  const [includeTax, setIncludeTax] = useState(true);
+
   useEffect(() => {
     loadVariants();
     loadCustomers();
@@ -237,7 +239,7 @@ export default function POS() {
   }
 
   const subtotal = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  const taxAmount = subtotal * 0.16;
+  const taxAmount = includeTax ? subtotal * 0.16 : 0;
   let discount = 0;
 
   if (appliedPromotion) {
@@ -619,7 +621,18 @@ export default function POS() {
               )}
 
               <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-600">IVA (16%):</span>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="includeTax"
+                    checked={includeTax}
+                    onChange={(e) => setIncludeTax(e.target.checked)}
+                    className="w-4 h-4 text-slate-900 rounded focus:ring-slate-900"
+                  />
+                  <label htmlFor="includeTax" className="text-slate-600 cursor-pointer">
+                    IVA (16%):
+                  </label>
+                </div>
                 <span className="font-medium text-slate-900">${taxAmount.toFixed(2)}</span>
               </div>
 
@@ -896,17 +909,8 @@ export default function POS() {
       )}
 
       {showInvoice && completedSale && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="relative w-full max-w-5xl my-8">
-            <button
-              onClick={() => {
-                setShowInvoice(false);
-                setCompletedSale(null);
-              }}
-              className="absolute -top-4 -right-4 bg-white rounded-full p-2 shadow-lg hover:bg-slate-100 z-10"
-            >
-              <X className="w-6 h-6" />
-            </button>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto">
             <CommercialInvoice
               sale={completedSale}
               store={completedSale.store || stores.find(s => s.active) || stores[0]}
