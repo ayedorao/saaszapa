@@ -78,6 +78,10 @@ export default function Suppliers() {
         ...doc.data()
       })) as PurchaseInvoiceItem[];
 
+      console.log('Proveedores cargados:', suppliersData.length);
+      console.log('Facturas cargadas:', invoicesData.length);
+      console.log('Items de factura cargados:', itemsData.length);
+
       const invoicesBySupplier = new Map<string, PurchaseInvoice[]>();
       invoicesData.forEach(invoice => {
         if (invoice.supplier_id) {
@@ -102,18 +106,25 @@ export default function Suppliers() {
         const supplierInvoices = invoicesBySupplier.get(supplier.id) || [];
         const supplierItems = itemsBySupplier.get(supplier.id) || [];
 
-        const totalOwed = supplierItems.reduce((sum, item) => sum + (item.subtotal || 0), 0);
-
         const confirmedInvoices = supplierInvoices.filter(inv => inv.status === 'confirmed');
         const draftInvoices = supplierInvoices.filter(inv => inv.status === 'draft');
 
         const totalPaid = confirmedInvoices.reduce((sum, inv) => sum + inv.total, 0);
         const pendingPayment = draftInvoices.reduce((sum, inv) => sum + inv.total, 0);
+        const totalOwed = totalPaid + pendingPayment;
 
         const dates = supplierInvoices.map(inv => new Date(inv.created_at));
         const lastPurchaseDate = dates.length > 0
           ? new Date(Math.max(...dates.map(d => d.getTime()))).toISOString()
           : undefined;
+
+        console.log(`Proveedor ${supplier.name}:`, {
+          facturas: supplierInvoices.length,
+          items: supplierItems.length,
+          totalPaid,
+          pendingPayment,
+          totalOwed
+        });
 
         return {
           ...supplier,
@@ -135,6 +146,7 @@ export default function Suppliers() {
       setSuppliers(enrichedSuppliers);
     } catch (error) {
       console.error('Error loading suppliers:', error);
+      alert('Error al cargar proveedores: ' + (error as Error).message);
     } finally {
       setDataLoading(false);
     }

@@ -164,34 +164,52 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
 
     setLoading(true);
     try {
-      const batch = writeBatch(db);
       const invoiceNumber = `FINV-${Date.now()}`;
 
       const supplierMap = new Map<string, string>();
+      const uniqueSupplierNames = new Set<string>();
+
       for (const row of rows) {
         if (row.supplier_name && !row.supplier_id) {
-          const existingSupplier = suppliers.find(
-            s => s.name.toLowerCase() === row.supplier_name.toLowerCase()
-          );
-
-          if (existingSupplier) {
-            supplierMap.set(row.supplier_name, existingSupplier.id);
-          } else if (!supplierMap.has(row.supplier_name)) {
-            const newSupplierRef = doc(collection(db, 'suppliers'));
-            const supplierCode = `PROV${Date.now().toString().slice(-6)}`;
-            batch.set(newSupplierRef, {
-              code: supplierCode,
-              name: row.supplier_name,
-              active: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              created_by: user.uid
-            });
-            supplierMap.set(row.supplier_name, newSupplierRef.id);
-          }
+          uniqueSupplierNames.add(row.supplier_name.toLowerCase());
         }
       }
 
+      const supplierNameMap = new Map<string, string>();
+      for (const row of rows) {
+        if (row.supplier_name) {
+          supplierNameMap.set(row.supplier_name.toLowerCase(), row.supplier_name);
+        }
+      }
+
+      for (const supplierNameLower of uniqueSupplierNames) {
+        const existingSupplier = suppliers.find(
+          s => s.name.toLowerCase() === supplierNameLower
+        );
+
+        if (existingSupplier) {
+          supplierMap.set(supplierNameLower, existingSupplier.id);
+          console.log('Proveedor existente encontrado:', existingSupplier.name, 'ID:', existingSupplier.id);
+        } else {
+          const originalName = supplierNameMap.get(supplierNameLower) || supplierNameLower;
+          const supplierCode = `PROV${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+          const newSupplierData = {
+            code: supplierCode,
+            name: originalName,
+            active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            created_by: user.uid
+          };
+
+          const newSupplierRef = await addDoc(collection(db, 'suppliers'), newSupplierData);
+          supplierMap.set(supplierNameLower, newSupplierRef.id);
+
+          console.log('Proveedor creado:', originalName, 'con ID:', newSupplierRef.id);
+        }
+      }
+
+      const batch = writeBatch(db);
       const invoiceRef = doc(collection(db, 'purchase_invoices'));
       let invoiceSubtotal = 0;
 
@@ -264,8 +282,10 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
         invoiceSubtotal += itemSubtotal;
 
         const finalSupplierId = row.supplier_id ||
-          (row.supplier_name ? supplierMap.get(row.supplier_name) : null) ||
+          (row.supplier_name ? supplierMap.get(row.supplier_name.toLowerCase()) : null) ||
           null;
+
+        console.log('Item con supplier_id:', finalSupplierId, 'para producto:', row.name);
 
         invoiceItems.push({
           invoice_id: invoiceRef.id,
@@ -294,8 +314,10 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
       const total = invoiceSubtotal + taxAmount;
 
       const primarySupplierId = rows[0]?.supplier_id ||
-        (rows[0]?.supplier_name ? supplierMap.get(rows[0].supplier_name) : null) ||
+        (rows[0]?.supplier_name ? supplierMap.get(rows[0].supplier_name.toLowerCase()) : null) ||
         null;
+
+      console.log('Factura con supplier_id principal:', primarySupplierId);
 
       batch.set(invoiceRef, {
         invoice_number: invoiceNumber,
@@ -316,10 +338,14 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
 
       await batch.commit();
 
+      console.log('Productos creados exitosamente:', productsCreated.length);
+      console.log('Items de factura:', invoiceItems.length);
+
+      alert(`¡Entrada exitosa! ${productsCreated.length} productos creados`);
       onSuccess(invoiceRef.id, productsCreated);
     } catch (error) {
       console.error('Error creating bulk products:', error);
-      alert('Error al crear productos en masa');
+      alert('Error al crear productos en masa: ' + (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -424,12 +450,19 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
                         <select
                           value={row.supplier_id}
                           onChange={(e) => {
-                            updateRow(row.id, 'supplier_id', e.target.value);
-                            if (e.target.value) {
-                              updateRow(row.id, 'supplier_name', '');
-                            }
+                            const newSupplierId = e.target.value;
+                            setRows(rows.map(r => {
+                              if (r.id === row.id) {
+                                return {
+                                  ...r,
+                                  supplier_id: newSupplierId,
+                                  supplier_name: newSupplierId ? '' : r.supplier_name
+                                };
+                              }
+                              return r;
+                            }));
                           }}
-                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs"
+                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs bg-white"
                         >
                           <option value="">Seleccionar...</option>
                           {suppliers.map(supplier => (
@@ -440,13 +473,20 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
                           type="text"
                           value={row.supplier_name}
                           onChange={(e) => {
-                            updateRow(row.id, 'supplier_name', e.target.value);
-                            if (e.target.value) {
-                              updateRow(row.id, 'supplier_id', '');
-                            }
+                            const newSupplierName = e.target.value;
+                            setRows(rows.map(r => {
+                              if (r.id === row.id) {
+                                return {
+                                  ...r,
+                                  supplier_name: newSupplierName,
+                                  supplier_id: newSupplierName ? '' : r.supplier_id
+                                };
+                              }
+                              return r;
+                            }));
                           }}
                           placeholder="O escribir nuevo"
-                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs italic"
+                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs italic bg-white"
                           disabled={!!row.supplier_id}
                         />
                       </div>
