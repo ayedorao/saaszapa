@@ -15,6 +15,7 @@ interface BulkProductRow {
   category: string;
   gender: string;
   supplier_id: string;
+  supplier_name: string;
   base_cost: string;
   base_price: string;
   size_id: string;
@@ -56,6 +57,7 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
       category: '',
       gender: '',
       supplier_id: '',
+      supplier_name: '',
       base_cost: '',
       base_price: '',
       size_id: '',
@@ -165,6 +167,31 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
       const batch = writeBatch(db);
       const invoiceNumber = `FINV-${Date.now()}`;
 
+      const supplierMap = new Map<string, string>();
+      for (const row of rows) {
+        if (row.supplier_name && !row.supplier_id) {
+          const existingSupplier = suppliers.find(
+            s => s.name.toLowerCase() === row.supplier_name.toLowerCase()
+          );
+
+          if (existingSupplier) {
+            supplierMap.set(row.supplier_name, existingSupplier.id);
+          } else if (!supplierMap.has(row.supplier_name)) {
+            const newSupplierRef = doc(collection(db, 'suppliers'));
+            const supplierCode = `PROV${Date.now().toString().slice(-6)}`;
+            batch.set(newSupplierRef, {
+              code: supplierCode,
+              name: row.supplier_name,
+              active: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              created_by: user.uid
+            });
+            supplierMap.set(row.supplier_name, newSupplierRef.id);
+          }
+        }
+      }
+
       const invoiceRef = doc(collection(db, 'purchase_invoices'));
       let invoiceSubtotal = 0;
 
@@ -236,11 +263,15 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
         const itemSubtotal = parseFloat(row.base_cost) * quantity;
         invoiceSubtotal += itemSubtotal;
 
+        const finalSupplierId = row.supplier_id ||
+          (row.supplier_name ? supplierMap.get(row.supplier_name) : null) ||
+          null;
+
         invoiceItems.push({
           invoice_id: invoiceRef.id,
           variant_id: variantRef.id,
           product_name: `${row.brand} ${row.name} - ${size?.name} ${color?.name}`,
-          supplier_id: row.supplier_id || null,
+          supplier_id: finalSupplierId,
           cost_price: parseFloat(row.base_cost),
           quantity: quantity,
           subtotal: itemSubtotal,
@@ -262,9 +293,13 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
       const taxAmount = invoiceSubtotal * IVA_RATE;
       const total = invoiceSubtotal + taxAmount;
 
+      const primarySupplierId = rows[0]?.supplier_id ||
+        (rows[0]?.supplier_name ? supplierMap.get(rows[0].supplier_name) : null) ||
+        null;
+
       batch.set(invoiceRef, {
         invoice_number: invoiceNumber,
-        supplier_id: null,
+        supplier_id: primarySupplierId,
         status: 'draft',
         subtotal: invoiceSubtotal,
         tax_amount: taxAmount,
@@ -385,16 +420,36 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
                       />
                     </td>
                     <td className="px-2 py-2">
-                      <select
-                        value={row.supplier_id}
-                        onChange={(e) => updateRow(row.id, 'supplier_id', e.target.value)}
-                        className="w-32 px-2 py-1 border border-slate-300 rounded text-xs"
-                      >
-                        <option value="">Seleccionar...</option>
-                        {suppliers.map(supplier => (
-                          <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
-                        ))}
-                      </select>
+                      <div className="flex flex-col space-y-1">
+                        <select
+                          value={row.supplier_id}
+                          onChange={(e) => {
+                            updateRow(row.id, 'supplier_id', e.target.value);
+                            if (e.target.value) {
+                              updateRow(row.id, 'supplier_name', '');
+                            }
+                          }}
+                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs"
+                        >
+                          <option value="">Seleccionar...</option>
+                          {suppliers.map(supplier => (
+                            <option key={supplier.id} value={supplier.id}>{supplier.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          value={row.supplier_name}
+                          onChange={(e) => {
+                            updateRow(row.id, 'supplier_name', e.target.value);
+                            if (e.target.value) {
+                              updateRow(row.id, 'supplier_id', '');
+                            }
+                          }}
+                          placeholder="O escribir nuevo"
+                          className="w-32 px-2 py-1 border border-slate-300 rounded text-xs italic"
+                          disabled={!!row.supplier_id}
+                        />
+                      </div>
                     </td>
                     <td className="px-2 py-2">
                       <select

@@ -17,6 +17,7 @@ import CashRegisters from './pages/CashRegisters';
 import Chat from './pages/Chat';
 import ChatAudit from './pages/ChatAudit';
 import SystemControl from './pages/SystemControl';
+import Suppliers from './pages/Suppliers';
 
 function App() {
   const { user, loading } = useAuth();
@@ -57,6 +58,8 @@ function App() {
         return <Inventory />;
       case 'customers':
         return <Customers />;
+      case 'suppliers':
+        return <Suppliers />;
       case 'returns':
         return <Returns />;
       case 'promotions':
