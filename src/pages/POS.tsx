@@ -168,6 +168,37 @@ export default function POS() {
     setPromotions(data);
   }
 
+  function findApplicablePromotion(productId: string, variantId: string, quantity: number, cartSubtotal: number): Promotion | null {
+    const now = new Date();
+
+    const applicablePromotions = promotions.filter(promo => {
+      if (!promo.active) return false;
+
+      if (promo.start_date && new Date(promo.start_date) > now) return false;
+      if (promo.end_date && new Date(promo.end_date) < now) return false;
+
+      if (promo.min_quantity && quantity < promo.min_quantity) return false;
+
+      if (promo.min_purchase_amount && cartSubtotal < promo.min_purchase_amount) return false;
+
+      const promoProducts = (promo as any).products || [];
+      if (promoProducts.length > 0) {
+        const hasProduct = promoProducts.some((p: any) =>
+          p.product_id === productId || p.variant_id === variantId
+        );
+        if (!hasProduct) return false;
+      }
+
+      return true;
+    });
+
+    if (applicablePromotions.length === 0) return null;
+
+    applicablePromotions.sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    return applicablePromotions[0];
+  }
+
   function addToCart(variant: ProductVariant) {
     const stockQuantity = variant.inventory?.quantity || 0;
     const currentInCart = cart.find(item => item.variant.id === variant.id)?.quantity || 0;
@@ -178,24 +209,41 @@ export default function POS() {
     }
 
     const existingItem = cart.find(item => item.variant.id === variant.id);
+    const newQuantity = existingItem ? existingItem.quantity + 1 : 1;
 
+    let updatedCart;
     if (existingItem) {
-      setCart(cart.map(item =>
+      updatedCart = cart.map(item =>
         item.variant.id === variant.id
           ? {
               ...item,
-              quantity: item.quantity + 1,
-              subtotal: (item.quantity + 1) * item.price,
+              quantity: newQuantity,
+              subtotal: newQuantity * item.price,
             }
           : item
-      ));
+      );
     } else {
-      setCart([...cart, {
+      updatedCart = [...cart, {
         variant,
         quantity: 1,
         price: variant.price,
         subtotal: variant.price,
-      }]);
+      }];
+    }
+
+    setCart(updatedCart);
+
+    const tempSubtotal = updatedCart.reduce((sum, item) => sum + item.subtotal, 0);
+    const promotion = findApplicablePromotion(
+      variant.product_id as string,
+      variant.id,
+      newQuantity,
+      tempSubtotal
+    );
+
+    if (promotion && promotion.id !== appliedPromotion?.id) {
+      setAppliedPromotion(promotion);
+      alert(`¡Promoción aplicada! ${promotion.name}: ${promotion.type === 'percentage' ? promotion.value + '%' : '$' + promotion.value} de descuento`);
     }
   }
 

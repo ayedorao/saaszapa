@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Supplier, PurchaseInvoice, PurchaseInvoiceItem } from '../types/database';
 import SupplierInvoiceView from '../components/SupplierInvoiceView';
 import PurchaseInvoiceEditor from '../components/PurchaseInvoiceEditor';
+import BulkProductEntry from '../components/BulkProductEntry';
 import {
   Plus,
   Search,
@@ -21,7 +22,8 @@ import {
   Calendar,
   FileText,
   Lock,
-  Edit
+  Edit,
+  PackagePlus
 } from 'lucide-react';
 
 interface SupplierWithPaymentInfo extends Supplier {
@@ -33,7 +35,7 @@ interface SupplierWithPaymentInfo extends Supplier {
   hasPendingPayment: boolean;
 }
 
-type View = 'list' | 'edit' | 'detail' | 'invoice' | 'editInvoice';
+type View = 'list' | 'edit' | 'detail' | 'invoice' | 'editInvoice' | 'bulkEntry';
 
 export default function Suppliers() {
   const { user } = useAuth();
@@ -45,6 +47,8 @@ export default function Suppliers() {
   const [dataLoading, setDataLoading] = useState(true);
   const [supplierInvoices, setSupplierInvoices] = useState<PurchaseInvoice[]>([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const [stores, setStores] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     code: '',
@@ -64,7 +68,21 @@ export default function Suppliers() {
 
   useEffect(() => {
     loadSuppliers();
+    loadStores();
   }, []);
+
+  async function loadStores() {
+    try {
+      const storesSnap = await getDocs(query(collection(db, 'stores'), where('active', '==', true)));
+      const storesData = storesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setStores(storesData);
+      if (storesData.length > 0) {
+        setSelectedStoreId(storesData[0].id);
+      }
+    } catch (error) {
+      console.error('Error loading stores:', error);
+    }
+  }
 
   async function loadSuppliers() {
     setDataLoading(true);
@@ -393,6 +411,23 @@ export default function Suppliers() {
     setCurrentView('detail');
   }
 
+  function openBulkEntry() {
+    if (!selectedStoreId) {
+      alert('Por favor selecciona una tienda primero');
+      return;
+    }
+    setCurrentView('bulkEntry');
+  }
+
+  function handleBulkEntrySuccess(invoiceId: string, products: any[]) {
+    loadSuppliers();
+    if (selectedSupplier) {
+      loadSupplierDetails(selectedSupplier.id);
+    }
+    setCurrentView('detail');
+    alert('Productos ingresados exitosamente');
+  }
+
   function resetForm() {
     setFormData({
       code: '',
@@ -449,7 +484,15 @@ export default function Suppliers() {
         />
       )}
 
-      {currentView !== 'invoice' && currentView !== 'editInvoice' && (
+      {currentView === 'bulkEntry' && selectedStoreId && (
+        <BulkProductEntry
+          onClose={backToList}
+          onSuccess={handleBulkEntrySuccess}
+          storeId={selectedStoreId}
+        />
+      )}
+
+      {currentView !== 'invoice' && currentView !== 'editInvoice' && currentView !== 'bulkEntry' && (
         <>
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -901,6 +944,32 @@ export default function Suppliers() {
                     ${selectedSupplier.pendingPayment.toFixed(2)}
                   </span>
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">
+                    Selecciona Tienda para Entrada de Productos:
+                  </label>
+                  <select
+                    value={selectedStoreId}
+                    onChange={(e) => setSelectedStoreId(e.target.value)}
+                    className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-900 focus:border-transparent"
+                  >
+                    <option value="">Selecciona una tienda...</option>
+                    {stores.map(store => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={openBulkEntry}
+                  disabled={!selectedStoreId}
+                  className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <PackagePlus className="w-5 h-5 mr-2" />
+                  Entrada
+                </button>
               </div>
 
               <div>

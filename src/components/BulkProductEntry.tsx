@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, addDoc, writeBatch, doc } from 'firebase/firestore';
+import { collection, getDocs, query, where, addDoc, writeBatch, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, X, Trash2, Save } from 'lucide-react';
@@ -28,11 +28,12 @@ interface BulkProductEntryProps {
   onClose: () => void;
   onSuccess: (invoiceId: string, products: any[]) => void;
   storeId: string;
+  editInvoiceId?: string;
 }
 
 const IVA_RATE = 0.16;
 
-export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkProductEntryProps) {
+export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvoiceId }: BulkProductEntryProps) {
   const { user } = useAuth();
   const [sizes, setSizes] = useState<Size[]>([]);
   const [colors, setColors] = useState<Color[]>([]);
@@ -43,10 +44,17 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [isPaid, setIsPaid] = useState(false);
+  const [existingInvoiceNumber, setExistingInvoiceNumber] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (editInvoiceId && sizes.length > 0 && colors.length > 0 && suppliers.length > 0) {
+      loadExistingInvoice();
+    }
+  }, [editInvoiceId, sizes, colors, suppliers]);
 
   function createEmptyRow(): BulkProductRow {
     return {
@@ -100,6 +108,70 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId }: BulkPr
     } catch (error) {
       console.error('Error loading data:', error);
       alert('Error al cargar datos');
+    } finally {
+      setLoadingData(false);
+    }
+  }
+
+  async function loadExistingInvoice() {
+    if (!editInvoiceId) return;
+
+    try {
+      setLoadingData(true);
+
+      const invoiceDoc = await getDoc(doc(db, 'purchase_invoices', editInvoiceId));
+      if (!invoiceDoc.exists()) {
+        alert('Factura no encontrada');
+        onClose();
+        return;
+      }
+
+      const invoiceData = invoiceDoc.data();
+      setExistingInvoiceNumber(invoiceData.invoice_number);
+      setIsPaid((invoiceData as any).statusPago === true);
+
+      const itemsSnap = await getDocs(
+        query(collection(db, 'purchase_invoice_items'), where('invoice_id', '==', editInvoiceId))
+      );
+
+      const variantsSnap = await getDocs(collection(db, 'product_variants'));
+      const productsSnap = await getDocs(collection(db, 'products'));
+
+      const variantsMap = new Map(variantsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+      const productsMap = new Map(productsSnap.docs.map(d => [d.id, { id: d.id, ...d.data() }]));
+
+      const loadedRows: BulkProductRow[] = itemsSnap.docs.map(itemDoc => {
+        const item = itemDoc.data();
+        const variant: any = variantsMap.get(item.variant_id);
+        const product: any = variant ? productsMap.get(variant.product_id) : null;
+
+        const supplier = suppliers.find(s => s.id === item.supplier_id);
+
+        return {
+          id: itemDoc.id,
+          code: product?.code || '',
+          name: item.product_name || product?.name || '',
+          brand: product?.brand || '',
+          finish: product?.finish || '',
+          category: product?.category || '',
+          gender: product?.gender || '',
+          supplier_id: item.supplier_id || '',
+          supplier_name: supplier?.name || '',
+          base_cost: item.cost_price.toString(),
+          base_price: variant?.price?.toString() || product?.base_price?.toString() || '',
+          size_id: variant?.size_id || '',
+          color_id: variant?.color_id || '',
+          quantity: item.quantity.toString(),
+          barcode: variant?.barcode || '',
+        };
+      });
+
+      if (loadedRows.length > 0) {
+        setRows(loadedRows);
+      }
+    } catch (error) {
+      console.error('Error loading existing invoice:', error);
+      alert('Error al cargar la factura existente');
     } finally {
       setLoadingData(false);
     }
