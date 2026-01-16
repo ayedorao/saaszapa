@@ -40,7 +40,7 @@ export const BarcodeLabel: React.FC<BarcodeLabelProps> = ({
   format = 'CODE128',
 }) => {
   return (
-    <div className="barcode-label-container" style={{
+    <div className="barcode-label-container bg-white" style={{
       width: '384px',
       minHeight: '192px',
       padding: '8px',
@@ -122,7 +122,7 @@ export const CompactBarcodeLabel: React.FC<BarcodeLabelProps> = ({
   format = 'CODE128',
 }) => {
   return (
-    <div className="barcode-label-compact" style={{
+    <div className="barcode-label-compact bg-white" style={{
       width: '192px',
       minHeight: '96px',
       padding: '4px',

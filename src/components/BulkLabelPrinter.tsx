@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ProductVariant } from '../types/database';
-import ProfessionalBarcodeLabel from './ProfessionalBarcodeLabel';
+import SimpleProfessionalLabel from './SimpleProfessionalLabel';
 import { BarcodeLabel } from './BarcodeLabel';
-import ShoeBoxLabel from './ShoeBoxLabel';
+import SimpleShoeBoxLabel from './SimpleShoeBoxLabel';
 import { X, Printer, Download, Minus, Plus } from 'lucide-react';
 
 interface BulkLabelPrinterProps {
@@ -66,9 +66,9 @@ export default function BulkLabelPrinter({ selectedVariants, onClose }: BulkLabe
           />
         );
       case 'professional':
-        return <ProfessionalBarcodeLabel key={index} variant={variant} />;
+        return <SimpleProfessionalLabel key={index} variant={variant} />;
       case 'shoebox':
-        return <ShoeBoxLabel key={index} variant={variant} price={variant.price} />;
+        return <SimpleShoeBoxLabel key={index} variant={variant} price={variant.price} />;
       default:
         return (
           <BarcodeLabel
@@ -86,8 +86,8 @@ export default function BulkLabelPrinter({ selectedVariants, onClose }: BulkLabe
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 no-print-overlay">
+      <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col no-print-container">
         <div className="no-print flex items-center justify-between p-6 border-b border-slate-200 bg-slate-50">
           <div>
             <h2 className="text-2xl font-bold text-slate-900">
@@ -216,17 +216,50 @@ export default function BulkLabelPrinter({ selectedVariants, onClose }: BulkLabe
 
       <style>{`
         @media print {
+          /* Ocultar elementos de UI */
           .no-print {
             display: none !important;
           }
+
+          /* Ocultar el overlay y contenedor del modal */
+          .no-print-overlay {
+            background: white !important;
+            position: static !important;
+            padding: 0 !important;
+          }
+
+          .no-print-container {
+            box-shadow: none !important;
+            max-width: none !important;
+            max-height: none !important;
+            overflow: visible !important;
+            background: white !important;
+          }
+
+          /* Mostrar solo las etiquetas */
           .print-only {
             display: block !important;
+            padding: 0 !important;
           }
+
+          /* Configurar página para impresión */
           body {
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
+            background: white !important;
+          }
+
+          @page {
+            margin: 0.5cm;
+            background: white;
+          }
+
+          /* Asegurar que las etiquetas se vean correctamente */
+          .print-only > div {
+            page-break-inside: avoid;
           }
         }
+
         @media screen {
           .print-only {
             display: none !important;
