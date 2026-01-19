@@ -6,6 +6,7 @@ import { Product, ProductVariant, Size, Color, Inventory } from '../types/databa
 import { Plus, Search, Package, Eye, X, RefreshCw, Edit2, Trash2, PackagePlus } from 'lucide-react';
 import Barcode from 'react-barcode';
 import { generateBarcode, validateBarcode } from '../utils/barcodeGenerator';
+import { checkAndInitializeSizesColors } from '../utils/initializeSizesColors';
 import BulkProductEntry from '../components/BulkProductEntry';
 import PurchaseInvoiceEditor from '../components/PurchaseInvoiceEditor';
 import ProductSaveConfirmation from '../components/ProductSaveConfirmation';
@@ -145,6 +146,8 @@ export default function Products() {
 
   async function loadSizesAndColors() {
     try {
+      await checkAndInitializeSizesColors();
+
       const [sizesSnap, colorsSnap] = await Promise.all([
         getDocs(query(collection(db, 'sizes'), where('active', '==', true))),
         getDocs(query(collection(db, 'colors'), where('active', '==', true))),
@@ -1182,14 +1185,32 @@ export default function Products() {
               </div>
 
               <div className="border-t border-slate-200 pt-4 mt-4">
-                <h4 className="font-semibold text-slate-900 mb-3">
-                  {selectedProduct ? 'Gestionar Variantes' : 'Tallas y Colores *'}
-                </h4>
-                {selectedProduct && (
-                  <p className="text-sm text-slate-600 mb-3">
-                    Selecciona o deselecciona tallas y colores para agregar o eliminar variantes
-                  </p>
-                )}
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h4 className="font-semibold text-slate-900">
+                      {selectedProduct ? 'Gestionar Variantes' : 'Tallas y Colores *'}
+                    </h4>
+                    {selectedProduct && (
+                      <p className="text-sm text-slate-600 mt-1">
+                        Selecciona o deselecciona tallas y colores para agregar o eliminar variantes
+                      </p>
+                    )}
+                  </div>
+                  {(sizes.length === 0 || colors.length === 0) && (
+                    <div className="text-right">
+                      <p className="text-xs font-medium text-orange-600 mb-1">
+                        {sizes.length === 0 && colors.length === 0
+                          ? 'No hay tallas ni colores registrados'
+                          : sizes.length === 0
+                          ? 'No hay tallas registradas'
+                          : 'No hay colores registrados'}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Contacta al administrador para configurar
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -1223,9 +1244,30 @@ export default function Products() {
 
                 <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Seleccionar Tallas
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-slate-700">
+                            Seleccionar Tallas
+                          </label>
+                          <div className="flex space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allSizeIds = new Set(sizes.map(s => s.id));
+                                setSelectedSizeIds(allSizeIds);
+                              }}
+                              className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                            >
+                              Todas
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedSizeIds(new Set())}
+                              className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors"
+                            >
+                              Ninguna
+                            </button>
+                          </div>
+                        </div>
                         <div className="border border-slate-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50">
                           {sizes.length === 0 ? (
                             <p className="text-sm text-slate-500 text-center py-2">No hay tallas disponibles</p>
@@ -1254,9 +1296,30 @@ export default function Products() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">
-                          Seleccionar Colores
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-slate-700">
+                            Seleccionar Colores
+                          </label>
+                          <div className="flex space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allColorIds = new Set(colors.map(c => c.id));
+                                setSelectedColorIds(allColorIds);
+                              }}
+                              className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                            >
+                              Todos
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedColorIds(new Set())}
+                              className="text-xs px-2 py-1 bg-slate-100 text-slate-700 rounded hover:bg-slate-200 transition-colors"
+                            >
+                              Ninguno
+                            </button>
+                          </div>
+                        </div>
                         <div className="border border-slate-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50">
                           {colors.length === 0 ? (
                             <p className="text-sm text-slate-500 text-center py-2">No hay colores disponibles</p>
@@ -1287,7 +1350,70 @@ export default function Products() {
 
                 {selectedSizeIds.size > 0 && selectedColorIds.size > 0 && (
                     <div className="border-t border-slate-200 pt-4 mt-4">
-                      <h4 className="font-semibold text-slate-900 mb-3">Stock y Códigos de Barras</h4>
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-slate-900">Stock y Códigos de Barras</h4>
+                        <div className="flex space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newStocks = new Map<string, number>();
+                              const newBarcodes = new Map<string, string>();
+
+                              Array.from(selectedSizeIds).forEach(sizeId => {
+                                Array.from(selectedColorIds).forEach(colorId => {
+                                  const variantKey = `${sizeId}-${colorId}`;
+                                  if (!variantStocks.has(variantKey)) {
+                                    newStocks.set(variantKey, 0);
+                                  }
+                                  if (!variantBarcodes.has(variantKey)) {
+                                    const defaultBarcode = generateBarcodePreview(sizeId, colorId);
+                                    newBarcodes.set(variantKey, defaultBarcode);
+                                  }
+                                });
+                              });
+
+                              setVariantStocks(new Map([...variantStocks, ...newStocks]));
+                              setVariantBarcodes(new Map([...variantBarcodes, ...newBarcodes]));
+                            }}
+                            className="inline-flex items-center px-3 py-1.5 bg-green-100 text-green-700 rounded-lg text-sm font-medium hover:bg-green-200 transition-colors"
+                          >
+                            <RefreshCw className="w-4 h-4 mr-1.5" />
+                            Generar Variantes
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newStocks = new Map<string, number>();
+                              Array.from(selectedSizeIds).forEach(sizeId => {
+                                Array.from(selectedColorIds).forEach(colorId => {
+                                  const variantKey = `${sizeId}-${colorId}`;
+                                  newStocks.set(variantKey, 10);
+                                });
+                              });
+                              setVariantStocks(newStocks);
+                            }}
+                            className="inline-flex items-center px-3 py-1.5 bg-blue-100 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-200 transition-colors"
+                          >
+                            Stock = 10
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newStocks = new Map<string, number>();
+                              Array.from(selectedSizeIds).forEach(sizeId => {
+                                Array.from(selectedColorIds).forEach(colorId => {
+                                  const variantKey = `${sizeId}-${colorId}`;
+                                  newStocks.set(variantKey, 0);
+                                });
+                              });
+                              setVariantStocks(newStocks);
+                            }}
+                            className="inline-flex items-center px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
+                          >
+                            Limpiar Stock
+                          </button>
+                        </div>
+                      </div>
                       <div className="max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-slate-100 sticky top-0">
