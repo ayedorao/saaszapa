@@ -4,6 +4,7 @@ export type SaleStatus = 'draft' | 'completed' | 'voided' | 'returned';
 export type MovementType = 'purchase' | 'sale' | 'return' | 'adjustment' | 'transfer' | 'damage' | 'theft' | 'initial';
 export type PromotionType = 'percentage' | 'fixed_amount' | 'buy_x_get_y' | 'second_item_discount';
 export type SessionStatus = 'open' | 'closed' | 'reconciled';
+export type LayawayStatus = 'active' | 'paid' | 'delivered' | 'cancelled';
 
 export interface Profile {
   id: string;
@@ -441,4 +442,40 @@ export interface PrintQueueItem {
   printed_at?: string;
   printed_by?: string;
   store_id?: string;
+}
+
+export interface Layaway {
+  id: string;
+  layaway_number: string;
+  customer_id: string;
+  variant_id: string;
+  store_id: string;
+  status: LayawayStatus;
+  total_price: number;
+  amount_paid: number;
+  balance: number;
+  initial_payment?: number;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  paid_at?: string;
+  delivered_at?: string;
+  cancelled_at?: string;
+  cancelled_reason?: string;
+  created_by?: string;
+  customer?: Customer;
+  variant?: ProductVariant;
+  payments?: LayawayPayment[];
+}
+
+export interface LayawayPayment {
+  id: string;
+  layaway_id: string;
+  amount: number;
+  payment_method: PaymentMethod;
+  reference_number?: string;
+  notes?: string;
+  created_at: string;
+  created_by?: string;
+  creator?: Profile;
 }

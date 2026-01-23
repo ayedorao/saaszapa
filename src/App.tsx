@@ -19,6 +19,7 @@ import ChatAudit from './pages/ChatAudit';
 import SystemControl from './pages/SystemControl';
 import Suppliers from './pages/Suppliers';
 import Sales from './pages/Sales';
+import Layaways from './pages/Layaways';
 
 function App() {
   const { user, loading } = useAuth();
@@ -63,6 +64,8 @@ function App() {
         return <Suppliers />;
       case 'sales':
         return <Sales />;
+      case 'layaways':
+        return <Layaways />;
       case 'returns':
         return <Returns />;
       case 'promotions':
