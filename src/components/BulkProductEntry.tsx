@@ -38,15 +38,15 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
   const [sizes, setSizes] = useState<Size[]>([]);
   const [colors, setColors] = useState<Color[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [rows, setRows] = useState<BulkProductRow[]>([
-    createEmptyRow()
-  ]);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [isPaid, setIsPaid] = useState(false);
   const [existingInvoiceNumber, setExistingInvoiceNumber] = useState<string | null>(null);
   const [profitMargin, setProfitMargin] = useState(50); // Margen de ganancia global
   const [autoMode, setAutoMode] = useState(true); // Modo automatico activado por defecto
+  const [rows, setRows] = useState<BulkProductRow[]>([
+    createEmptyRow()
+  ]);
 
   useEffect(() => {
     loadData();
