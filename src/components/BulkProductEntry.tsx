@@ -45,6 +45,8 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
   const [loadingData, setLoadingData] = useState(true);
   const [isPaid, setIsPaid] = useState(false);
   const [existingInvoiceNumber, setExistingInvoiceNumber] = useState<string | null>(null);
+  const [profitMargin, setProfitMargin] = useState(50); // Margen de ganancia global
+  const [autoMode, setAutoMode] = useState(true); // Modo automatico activado por defecto
 
   useEffect(() => {
     loadData();
@@ -56,21 +58,44 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
     }
   }, [editInvoiceId, sizes, colors, suppliers]);
 
+  // Generar código automático de producto
+  function generateProductCode(): string {
+    const existingCodes = rows.map(r => r.code).filter(c => c.match(/PROD-\d+/));
+    const maxNum = existingCodes.reduce((max, code) => {
+      const match = code.match(/PROD-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1]);
+        return num > max ? num : max;
+      }
+      return max;
+    }, 0);
+    return `PROD-${String(maxNum + 1).padStart(4, '0')}`;
+  }
+
+  // Calcular precio de venta automáticamente
+  function calculateSalePrice(cost: number, margin: number): number {
+    return Math.round(cost * (1 + margin / 100));
+  }
+
   function createEmptyRow(): BulkProductRow {
+    const defaultSupplier = suppliers.length > 0 ? suppliers[0] : null;
+    const defaultSize = sizes.length > 0 ? sizes[0] : null;
+    const defaultColor = colors.length > 0 ? colors[0] : null;
+
     return {
       id: Date.now().toString() + Math.random(),
-      code: '',
+      code: autoMode ? generateProductCode() : '',
       name: '',
-      brand: '',
-      finish: '',
-      category: '',
-      gender: '',
-      supplier_id: '',
-      supplier_name: '',
+      brand: autoMode ? 'Sin Marca' : '',
+      finish: autoMode ? '' : '',
+      category: autoMode ? 'General' : '',
+      gender: autoMode ? 'Unisex' : '',
+      supplier_id: autoMode && defaultSupplier ? defaultSupplier.id : '',
+      supplier_name: autoMode && defaultSupplier ? defaultSupplier.name : '',
       base_cost: '',
       base_price: '',
-      size_id: '',
-      color_id: '',
+      size_id: autoMode && defaultSize ? defaultSize.id : '',
+      color_id: autoMode && defaultColor ? defaultColor.id : '',
       quantity: '0',
       barcode: '',
     };
@@ -194,12 +219,27 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
       if (row.id === id) {
         const updated = { ...row, [field]: value };
 
+        // Calcular precio automáticamente cuando se ingresa el costo en modo automático
+        if (field === 'base_cost' && autoMode && value) {
+          const cost = parseFloat(value);
+          if (!isNaN(cost) && cost > 0) {
+            const salePrice = calculateSalePrice(cost, profitMargin);
+            updated.base_price = salePrice.toString();
+          }
+        }
+
+        // Auto-generar código de barras
         if (field === 'code' || field === 'size_id' || field === 'color_id') {
           if (updated.code && updated.size_id && updated.color_id) {
             const size = sizes.find(s => s.id === updated.size_id);
             const color = colors.find(c => c.id === updated.color_id);
             updated.barcode = generateBarcode(updated.code, size?.name || '', color?.name || '');
           }
+        }
+
+        // Auto-generar código si está vacío y se está editando otro campo
+        if (autoMode && !updated.code && field !== 'code') {
+          updated.code = generateProductCode();
         }
 
         return updated;
@@ -465,7 +505,54 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
           </button>
         </div>
 
-        <div className="p-6 max-h-[calc(100vh-250px)] overflow-y-auto">
+        {/* Controles de Automatización */}
+        <div className="p-6 border-b border-slate-200 bg-gradient-to-r from-green-50 to-blue-50">
+          <div className="flex items-center justify-between gap-6">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="autoMode"
+                  checked={autoMode}
+                  onChange={(e) => setAutoMode(e.target.checked)}
+                  className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
+                />
+                <label htmlFor="autoMode" className="ml-3 text-sm font-medium text-slate-900">
+                  Modo Automático
+                </label>
+              </div>
+              {autoMode && (
+                <div className="flex items-center space-x-2 bg-white rounded-lg px-4 py-2 shadow-sm">
+                  <label className="text-sm font-medium text-slate-700">
+                    Margen de Ganancia:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="500"
+                    value={profitMargin}
+                    onChange={(e) => setProfitMargin(parseInt(e.target.value) || 0)}
+                    className="w-20 px-3 py-1 border border-slate-300 rounded-lg text-center font-semibold"
+                  />
+                  <span className="text-sm font-medium text-slate-700">%</span>
+                </div>
+              )}
+            </div>
+            {autoMode && (
+              <div className="bg-white rounded-lg px-4 py-2 shadow-sm">
+                <p className="text-xs text-slate-600">
+                  <span className="font-semibold text-green-600">✓</span> Códigos generados automáticamente
+                  <span className="mx-2">•</span>
+                  <span className="font-semibold text-green-600">✓</span> Precios calculados con margen
+                  <span className="mx-2">•</span>
+                  <span className="font-semibold text-green-600">✓</span> Valores por defecto aplicados
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="p-6 max-h-[calc(100vh-350px)] overflow-y-auto">
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead className="bg-slate-100 sticky top-0 z-10">
@@ -493,8 +580,13 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
                         type="text"
                         value={row.code}
                         onChange={(e) => updateRow(row.id, 'code', e.target.value.toUpperCase())}
-                        className="w-24 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="SKU001"
+                        readOnly={autoMode}
+                        className={`w-24 px-2 py-1 border rounded text-xs ${
+                          autoMode
+                            ? 'bg-green-50 border-green-300 text-green-700 font-semibold cursor-not-allowed'
+                            : 'bg-white border-slate-300'
+                        }`}
+                        placeholder={autoMode ? "AUTO" : "SKU001"}
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -502,8 +594,8 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
                         type="text"
                         value={row.name}
                         onChange={(e) => updateRow(row.id, 'name', e.target.value)}
-                        className="w-32 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="Nombre"
+                        className="w-32 px-2 py-1 border border-blue-300 rounded text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                        placeholder="Nombre *"
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -511,8 +603,13 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
                         type="text"
                         value={row.brand}
                         onChange={(e) => updateRow(row.id, 'brand', e.target.value)}
-                        className="w-24 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="Marca"
+                        readOnly={autoMode}
+                        className={`w-24 px-2 py-1 border rounded text-xs ${
+                          autoMode
+                            ? 'bg-slate-100 border-slate-300 text-slate-600 cursor-not-allowed'
+                            : 'bg-white border-slate-300'
+                        }`}
+                        placeholder={autoMode ? "Sin Marca" : "Marca"}
                       />
                     </td>
                     <td className="px-2 py-2">
@@ -609,7 +706,7 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
                         step="0.01"
                         value={row.base_cost}
                         onChange={(e) => updateRow(row.id, 'base_cost', e.target.value)}
-                        className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
+                        className="w-20 px-2 py-1 border border-blue-300 rounded text-xs focus:border-blue-500 focus:ring-2 focus:ring-blue-200 font-semibold"
                         placeholder="0.00"
                       />
                     </td>
@@ -619,8 +716,13 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
                         step="0.01"
                         value={row.base_price}
                         onChange={(e) => updateRow(row.id, 'base_price', e.target.value)}
-                        className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="0.00"
+                        readOnly={autoMode}
+                        className={`w-20 px-2 py-1 border rounded text-xs font-semibold ${
+                          autoMode
+                            ? 'bg-green-50 border-green-300 text-green-700 cursor-not-allowed'
+                            : 'bg-white border-slate-300'
+                        }`}
+                        placeholder={autoMode ? "AUTO" : "0.00"}
                       />
                     </td>
                     <td className="px-2 py-2">
