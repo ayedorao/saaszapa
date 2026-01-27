@@ -227,5 +227,17 @@ service cloud.firestore {
       allow create: if true;
       allow delete: if isAdmin();
     }
+
+    match /layaways/{layawayId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
+
+    match /layaway_payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAuthenticated() || isAdmin();
+    }
   }
 }
