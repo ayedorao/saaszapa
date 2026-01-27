@@ -72,6 +72,9 @@ export default function Products() {
   const [includeHalfSizes, setIncludeHalfSizes] = useState(false);
   const [customColor, setCustomColor] = useState('');
   const [customColors, setCustomColors] = useState<string[]>([]);
+  const [quickEntryMode, setQuickEntryMode] = useState(true);
+  const [profitMargin, setProfitMargin] = useState(50); // Margen de ganancia por defecto 50%
+  const [defaultStock, setDefaultStock] = useState(0); // Stock inicial por defecto
 
   useEffect(() => {
     loadAllData();
@@ -327,7 +330,7 @@ export default function Products() {
             );
           }
 
-          const stock = variantStocks.get(variantKey) || 0;
+          const stock = variantStocks.get(variantKey) ?? defaultStock;
 
           const variantRef = doc(collection(db, 'product_variants'));
           batch.set(variantRef, {
@@ -506,7 +509,7 @@ export default function Products() {
               ? customBarcode
               : generateBarcode(formData.code, size?.name || '', color?.name || '');
 
-            const stock = variantStocks.get(variantKey) || 0;
+            const stock = variantStocks.get(variantKey) ?? defaultStock;
 
             const variantRef = doc(collection(db, 'product_variants'));
             batch.set(variantRef, {
@@ -592,6 +595,77 @@ export default function Products() {
       setLoading(false);
     }
   }
+
+  // Generar código automático de producto
+  function generateProductCode(): string {
+    const maxCode = products.reduce((max, p) => {
+      const match = p.code.match(/PROD-(\d+)/);
+      if (match) {
+        const num = parseInt(match[1]);
+        return num > max ? num : max;
+      }
+      return max;
+    }, 0);
+    return `PROD-${String(maxCode + 1).padStart(4, '0')}`;
+  }
+
+  // Calcular precio de venta automáticamente basado en costo y margen
+  function calculateSalePrice(cost: number, margin: number): number {
+    return Math.round(cost * (1 + margin / 100));
+  }
+
+  // Auto-inicializar formulario con valores por defecto
+  function initializeQuickEntry() {
+    const newCode = generateProductCode();
+    setFormData({
+      code: newCode,
+      name: '',
+      description: 'Producto registrado mediante entrada rápida',
+      brand: 'Sin Marca',
+      finish: '',
+      category: 'General',
+      gender: 'Unisex',
+      image_url: '',
+      base_cost: '',
+      base_price: '',
+    });
+
+    // Auto-seleccionar primera tienda
+    if (stores.length > 0 && !selectedStoreId) {
+      setSelectedStoreId(stores[0].id);
+    }
+
+    // En modo rápido, pre-seleccionar todas las tallas y colores comunes
+    if (quickEntryMode) {
+      // Seleccionar todas las tallas
+      setSelectedSizeIds(new Set(sizes.map(s => s.id)));
+
+      // Seleccionar primeros 5 colores más comunes
+      const commonColors = colors.slice(0, 5);
+      setSelectedColorIds(new Set(commonColors.map(c => c.id)));
+
+      // Establecer stock por defecto para todas las combinaciones
+      const stockMap = new Map<string, number>();
+      sizes.forEach(size => {
+        commonColors.forEach(color => {
+          const key = `${size.id}-${color.id}`;
+          stockMap.set(key, defaultStock);
+        });
+      });
+      setVariantStocks(stockMap);
+    }
+  }
+
+  // Actualizar precio de venta cuando cambia el costo o el margen
+  useEffect(() => {
+    if (quickEntryMode && formData.base_cost) {
+      const cost = parseFloat(formData.base_cost);
+      if (!isNaN(cost) && cost > 0) {
+        const salePrice = calculateSalePrice(cost, profitMargin);
+        setFormData(prev => ({ ...prev, base_price: salePrice.toString() }));
+      }
+    }
+  }, [formData.base_cost, profitMargin, quickEntryMode]);
 
   function resetForm() {
     setFormData({
@@ -912,6 +986,17 @@ export default function Products() {
             Actualizar
           </button>
           <button
+            onClick={() => {
+              setQuickEntryMode(true);
+              initializeQuickEntry();
+              setShowModal(true);
+            }}
+            className="inline-flex items-center px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors shadow-lg hover:shadow-xl"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Nuevo Producto
+          </button>
+          <button
             onClick={() => setShowBulkEntry(true)}
             className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors shadow-lg hover:shadow-xl"
           >
@@ -1118,9 +1203,40 @@ export default function Products() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full my-8">
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
-              <h2 className="text-2xl font-bold text-slate-900">
-                {selectedProduct ? 'Editar Producto' : 'Nuevo Producto'}
-              </h2>
+              <div className="flex items-center space-x-4">
+                <h2 className="text-2xl font-bold text-slate-900">
+                  {selectedProduct ? 'Editar Producto' : 'Nuevo Producto'}
+                </h2>
+                {!selectedProduct && (
+                  <div className="flex items-center space-x-2 bg-slate-100 rounded-lg p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickEntryMode(true);
+                        initializeQuickEntry();
+                      }}
+                      className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                        quickEntryMode
+                          ? 'bg-green-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Modo Rápido
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickEntryMode(false)}
+                      className={`px-3 py-1.5 rounded text-sm font-semibold transition-colors ${
+                        !quickEntryMode
+                          ? 'bg-slate-900 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Modo Avanzado
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 onClick={() => {
                   setShowModal(false);
@@ -1132,7 +1248,107 @@ export default function Products() {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">
+            <form onSubmit={handleSubmit} className="p-6 space-y-6 max-h-[calc(100vh-200px)] overflow-y-auto">{quickEntryMode && !selectedProduct ? (
+                <>
+                  {/* Modo Rápido - Solo campos esenciales */}
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <h3 className="text-sm font-semibold text-green-900 mb-1">Modo de Entrada Rápida Activado</h3>
+                    <p className="text-xs text-green-700">
+                      Solo necesitas ingresar el nombre y precio. Todo lo demás se configura automáticamente.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Nombre del Producto *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full px-4 py-3 text-lg border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="Ej: Zapato Deportivo Running"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Precio de Costo *
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="0"
+                          step="0.01"
+                          value={formData.base_cost}
+                          onChange={(e) => setFormData({ ...formData, base_cost: e.target.value })}
+                          className="w-full px-4 py-3 text-lg border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          placeholder="0.00"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-2">
+                          Margen de Ganancia (%)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="500"
+                          value={profitMargin}
+                          onChange={(e) => setProfitMargin(parseInt(e.target.value) || 0)}
+                          className="w-full px-4 py-3 text-lg border-2 border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700">Precio de Venta (Calculado)</span>
+                        <span className="text-2xl font-bold text-green-600">
+                          ${formData.base_price || '0.00'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-2">
+                        Stock Inicial por Defecto
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={defaultStock}
+                        onChange={(e) => setDefaultStock(parseInt(e.target.value) || 0)}
+                        className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                        placeholder="0"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        Este stock se aplicará a todas las variantes (tallas/colores)
+                      </p>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h4 className="text-sm font-semibold text-blue-900 mb-2">Configuración Automática:</h4>
+                      <ul className="text-xs text-blue-700 space-y-1">
+                        <li>• Código: {formData.code}</li>
+                        <li>• Marca: {formData.brand}</li>
+                        <li>• Categoría: {formData.category}</li>
+                        <li>• Género: {formData.gender}</li>
+                        <li>• Tienda: {stores.find(s => s.id === selectedStoreId)?.name || 'N/A'}</li>
+                        <li>• Tallas: {selectedSizeIds.size} seleccionadas</li>
+                        <li>• Colores: {selectedColorIds.size} seleccionados</li>
+                        <li>• Total variantes: {selectedSizeIds.size * selectedColorIds.size}</li>
+                      </ul>
+                    </div>
+                  </div>
+                </>
+              ) : (
+              <>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-2">
@@ -1667,8 +1883,10 @@ export default function Products() {
                     </div>
                   )}
               </div>
+              </>
+              )}
 
-              <div className="flex space-x-3 pt-4">
+              <div className="flex space-x-4 pt-4 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => {
@@ -1682,7 +1900,11 @@ export default function Products() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="flex-1 px-6 py-3 bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-800 transition-colors disabled:opacity-50"
+                  className={`flex-1 px-6 py-3 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 ${
+                    quickEntryMode && !selectedProduct
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : 'bg-slate-900 hover:bg-slate-800'
+                  }`}
                 >
                   {loading ? 'Guardando...' : selectedProduct ? 'Actualizar Producto' : 'Crear Producto'}
                 </button>
