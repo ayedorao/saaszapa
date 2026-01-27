@@ -67,6 +67,11 @@ export default function Products() {
   const [variantStocks, setVariantStocks] = useState<Map<string, number>>(new Map());
   const [variantBarcodes, setVariantBarcodes] = useState<Map<string, string>>(new Map());
   const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const [sizeRangeStart, setSizeRangeStart] = useState<string>('');
+  const [sizeRangeEnd, setSizeRangeEnd] = useState<string>('');
+  const [includeHalfSizes, setIncludeHalfSizes] = useState(false);
+  const [customColor, setCustomColor] = useState('');
+  const [customColors, setCustomColors] = useState<string[]>([]);
 
   useEffect(() => {
     loadAllData();
@@ -228,8 +233,13 @@ export default function Products() {
       return;
     }
 
-    if (selectedSizeIds.size === 0 || selectedColorIds.size === 0) {
-      alert('Debes seleccionar al menos una talla y un color');
+    if (selectedSizeIds.size === 0) {
+      alert('Debes seleccionar al menos una talla');
+      return;
+    }
+
+    if (selectedColorIds.size === 0 && customColors.length === 0) {
+      alert('Debes seleccionar al menos un color o agregar un color personalizado');
       return;
     }
 
@@ -265,14 +275,43 @@ export default function Products() {
       const productDocRef = await addDoc(collection(db, 'products'), productData);
       const productId = productDocRef.id;
 
+      const allColorIds: string[] = [];
+      const colorNameMap = new Map<string, string>();
+
+      for (const colorId of Array.from(selectedColorIds)) {
+        const color = colors.find(c => c.id === colorId);
+        if (color) {
+          allColorIds.push(colorId);
+          colorNameMap.set(colorId, color.name);
+        }
+      }
+
+      for (const customColorName of customColors) {
+        const existingColor = colors.find(c => c.name.toLowerCase() === customColorName.toLowerCase());
+        if (existingColor) {
+          if (!allColorIds.includes(existingColor.id)) {
+            allColorIds.push(existingColor.id);
+            colorNameMap.set(existingColor.id, existingColor.name);
+          }
+        } else {
+          const newColorRef = await addDoc(collection(db, 'colors'), {
+            name: customColorName,
+            active: true,
+            created_at: new Date().toISOString(),
+          });
+          allColorIds.push(newColorRef.id);
+          colorNameMap.set(newColorRef.id, customColorName);
+        }
+      }
+
       const batch = writeBatch(db);
       let newVariantsCount = 0;
 
       for (const sizeId of Array.from(selectedSizeIds)) {
-        for (const colorId of Array.from(selectedColorIds)) {
+        for (const colorId of allColorIds) {
           const size = sizes.find(s => s.id === sizeId);
-          const color = colors.find(c => c.id === colorId);
-          const sku = `${formData.code}-${size?.name}-${color?.name}`.toUpperCase().replace(/\s+/g, '-');
+          const colorName = colorNameMap.get(colorId);
+          const sku = `${formData.code}-${size?.name}-${colorName}`.toUpperCase().replace(/\s+/g, '-');
           const variantKey = `${sizeId}-${colorId}`;
 
           const customBarcode = variantBarcodes.get(variantKey);
@@ -284,7 +323,7 @@ export default function Products() {
             barcode = generateBarcode(
               formData.code,
               size?.name || '',
-              color?.name || ''
+              colorName || ''
             );
           }
 
@@ -573,6 +612,68 @@ export default function Products() {
     setVariantStocks(new Map());
     setVariantBarcodes(new Map());
     setSelectedStoreId(stores.length > 0 ? stores[0].id : '');
+    setSizeRangeStart('');
+    setSizeRangeEnd('');
+    setIncludeHalfSizes(false);
+    setCustomColor('');
+    setCustomColors([]);
+  }
+
+  function applySizeRange() {
+    if (!sizeRangeStart || !sizeRangeEnd) {
+      alert('Por favor selecciona un rango de tallas válido');
+      return;
+    }
+
+    const start = parseFloat(sizeRangeStart);
+    const end = parseFloat(sizeRangeEnd);
+
+    if (isNaN(start) || isNaN(end) || start > end) {
+      alert('Rango de tallas inválido');
+      return;
+    }
+
+    const sizeNames: string[] = [];
+    let current = start;
+
+    while (current <= end) {
+      sizeNames.push(current.toString());
+      if (includeHalfSizes && current + 0.5 <= end) {
+        sizeNames.push((current + 0.5).toString());
+      }
+      current += 1;
+    }
+
+    const matchingSizeIds = sizes
+      .filter(size => sizeNames.includes(size.name))
+      .map(size => size.id);
+
+    if (matchingSizeIds.length === 0) {
+      alert(`No se encontraron tallas en el rango ${start} - ${end}. Asegúrate de que estas tallas existan en el sistema.`);
+      return;
+    }
+
+    setSelectedSizeIds(new Set(matchingSizeIds));
+    alert(`Se seleccionaron ${matchingSizeIds.length} tallas`);
+  }
+
+  function addCustomColor() {
+    if (!customColor.trim()) {
+      alert('Por favor ingresa un nombre de color');
+      return;
+    }
+
+    if (customColors.includes(customColor.trim())) {
+      alert('Este color ya está en la lista');
+      return;
+    }
+
+    setCustomColors([...customColors, customColor.trim()]);
+    setCustomColor('');
+  }
+
+  function removeCustomColor(index: number) {
+    setCustomColors(customColors.filter((_, i) => i !== index));
   }
 
   function toggleProductExpansion(productId: string) {
@@ -1268,6 +1369,52 @@ export default function Products() {
                             </button>
                           </div>
                         </div>
+
+                        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <label className="block text-xs font-semibold text-blue-900 mb-2">
+                            Selección por Rango
+                          </label>
+                          <div className="flex items-end space-x-2">
+                            <div className="flex-1">
+                              <input
+                                type="number"
+                                step="0.5"
+                                placeholder="Desde"
+                                value={sizeRangeStart}
+                                onChange={(e) => setSizeRangeStart(e.target.value)}
+                                className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                            <span className="text-blue-700 font-bold pb-1.5">-</span>
+                            <div className="flex-1">
+                              <input
+                                type="number"
+                                step="0.5"
+                                placeholder="Hasta"
+                                value={sizeRangeEnd}
+                                onChange={(e) => setSizeRangeEnd(e.target.value)}
+                                className="w-full px-2 py-1.5 text-sm border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                          </div>
+                          <label className="flex items-center space-x-2 mt-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={includeHalfSizes}
+                              onChange={(e) => setIncludeHalfSizes(e.target.checked)}
+                              className="rounded text-blue-600"
+                            />
+                            <span className="text-xs text-blue-800">Incluir medios (.5)</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={applySizeRange}
+                            className="w-full mt-2 px-3 py-1.5 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700 transition-colors"
+                          >
+                            Aplicar Rango
+                          </button>
+                        </div>
+
                         <div className="border border-slate-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50">
                           {sizes.length === 0 ? (
                             <p className="text-sm text-slate-500 text-center py-2">No hay tallas disponibles</p>
@@ -1320,6 +1467,54 @@ export default function Products() {
                             </button>
                           </div>
                         </div>
+
+                        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                          <label className="block text-xs font-semibold text-green-900 mb-2">
+                            Colores Personalizados
+                          </label>
+                          <div className="flex items-center space-x-2 mb-2">
+                            <input
+                              type="text"
+                              placeholder="Nombre del color"
+                              value={customColor}
+                              onChange={(e) => setCustomColor(e.target.value)}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  addCustomColor();
+                                }
+                              }}
+                              className="flex-1 px-2 py-1.5 text-sm border border-green-300 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                            />
+                            <button
+                              type="button"
+                              onClick={addCustomColor}
+                              className="px-3 py-1.5 bg-green-600 text-white rounded text-xs font-semibold hover:bg-green-700 transition-colors"
+                            >
+                              Agregar
+                            </button>
+                          </div>
+                          {customColors.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {customColors.map((color, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium"
+                                >
+                                  {color}
+                                  <button
+                                    type="button"
+                                    onClick={() => removeCustomColor(index)}
+                                    className="ml-1.5 text-green-600 hover:text-green-900"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
                         <div className="border border-slate-300 rounded-lg p-3 max-h-48 overflow-y-auto bg-slate-50">
                           {colors.length === 0 ? (
                             <p className="text-sm text-slate-500 text-center py-2">No hay colores disponibles</p>
@@ -1348,7 +1543,7 @@ export default function Products() {
                       </div>
                     </div>
 
-                {selectedSizeIds.size > 0 && selectedColorIds.size > 0 && (
+                {selectedSizeIds.size > 0 && (selectedColorIds.size > 0 || customColors.length > 0) && (
                     <div className="border-t border-slate-200 pt-4 mt-4">
                       <div className="flex items-center justify-between mb-3">
                         <h4 className="font-semibold text-slate-900">Stock y Códigos de Barras</h4>
