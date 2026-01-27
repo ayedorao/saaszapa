@@ -44,9 +44,7 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
   const [existingInvoiceNumber, setExistingInvoiceNumber] = useState<string | null>(null);
   const [profitMargin, setProfitMargin] = useState(50); // Margen de ganancia global
   const [autoMode, setAutoMode] = useState(true); // Modo automatico activado por defecto
-  const [rows, setRows] = useState<BulkProductRow[]>([
-    createEmptyRow()
-  ]);
+  const [rows, setRows] = useState<BulkProductRow[]>([]);
 
   useEffect(() => {
     loadData();
@@ -57,6 +55,13 @@ export default function BulkProductEntry({ onClose, onSuccess, storeId, editInvo
       loadExistingInvoice();
     }
   }, [editInvoiceId, sizes, colors, suppliers]);
+
+  // Initialize with first empty row after data is loaded
+  useEffect(() => {
+    if (sizes.length > 0 && colors.length > 0 && suppliers.length > 0 && rows.length === 0 && !editInvoiceId) {
+      setRows([createEmptyRow()]);
+    }
+  }, [sizes, colors, suppliers]);
 
   // Generar código automático de producto
   function generateProductCode(): string {
